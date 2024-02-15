@@ -3,3 +3,6 @@ data/
 # temp folder and files
 **/temp/
 **/temp.*
+
+# other repo
+bwa-mem2/
