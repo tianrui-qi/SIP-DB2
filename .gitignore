@@ -1,0 +1,5 @@
+data/
+
+# temp folder and files
+**/temp/
+**/temp.*
