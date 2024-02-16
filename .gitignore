@@ -4,5 +4,5 @@ data/
 **/temp/
 **/temp.*
 
-# other repo
-bwa-mem2/
+# software
+bwa-mem2-2.2.1_x64-linux/
