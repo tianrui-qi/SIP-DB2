@@ -5,6 +5,31 @@
 - aligning raw data with bwa
 - check out aligned data structure and how to read them with python
 
+## Structure
+
+```bash
+TACG-Onc
+├── bwa-mem2-2.2.1_x64-linux    # bwa-mem, software for alignment
+└── data
+│   ├── fastq                   # raw fastq files
+│   │   ├── SRR8924580          # patient id
+│   │   │   ├── *R1.fastq.gz    # read 1
+│   │   │   └── *R2.fastq.gz    # read 2
+│   │   ├── SRR8924581
+│   │   │   ├── *R1.fastq.gz
+│   │   │   └── *R2.fastq.gz
+│   │   └── ...
+│   ├── ref                     # reference genome for bwa-mem
+│   │   └── ref.fa
+│   ├── sam                     # output from bwa-mem
+│   │   ├── SRR8924580.sam
+│   │   ├── SRR8924581.sam
+│   │   └── ...
+│   └── profile.txt
+├── src                         # source help module for main
+└── main.ipynb                  # main script for running
+```
+
 ## Data
 
 ### Raw FASTQ Data
@@ -46,7 +71,7 @@ in `/data/sam/*.sam`.
 ```bash
 bwa-mem2-2.2.1_x64-linux/bwa-mem2 mem [path to reference genome] [path to read 1] [path to read 2] > [path to .sam file save path] -t [number of threads]
 ```
-for example, for patient `SRR8924581`, 
+for example, for patient `SRR8924582`, 
 ```bash
-bwa-mem2-2.2.1_x64-linux/bwa-mem2 mem data/ref/ref.fa data/fastq/SRR8924581/*R1.fastq.gz data/fastq/SRR8924581/*R2.fastq.gz > data/sam/SRR8924581.sam -t 32
+bwa-mem2-2.2.1_x64-linux/bwa-mem2 mem data/ref/ref.fa data/fastq/SRR8924582/*R1.fastq.gz data/fastq/SRR8924582/*R2.fastq.gz > data/sam/SRR8924582.sam -t 32
 ```
