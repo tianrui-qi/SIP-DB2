@@ -3,6 +3,3 @@ data/
 # temp folder and files
 **/temp/
 **/temp.*
-
-# software
-bwa-mem2-2.2.1_x64-linux/
