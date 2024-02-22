@@ -2,8 +2,16 @@
 
 ## Todo
 
-- check out aligned data structure and how to read them with python ([package](https://biopython.org/docs/1.74/api/Bio.Sequencing.Applications.html))
-- input of the model
+- check out aligned data structure and how to read them with python ([package](https://github.com/pysam-developers/pysam))
+- input
+    - For each sample, we have arond 100M read where average number of base per read is 124. 
+    - We annote the sequencing and filter the read we select. After running [VCF](https://docs.gdc.cancer.gov/Data/Bioinformatics_Pipelines/DNA_Seq_Variant_Calling_Pipeline/#variant-call-annotation-workflow), select read arond place that mark as variant. - ask Nanratha
+    - Then, random select same number of read from elsewhere so that we have 50% read from variant place that may directly relate to BCC (basal cell carcinoma) and 50% random read from none variant place which may same accorss all patient. `percentage: float` 
+    - For the distribution of random selection, there are two way: either is select according to read of each chromosome, or we random select from all read of all chromosome. We plan to test the first one first and then use second one to increase the generality. `random: bool`
+    - For each read, how to cut them according to score? - ask Nanratha `threshold: float`
+- train
+    - must use minibatch, still need to test out `batch_size: int`
+    - fine tuning or downstring task? i.e., do we need to freeze the DNABERT2? Remember to leave a parameter to control this; to do this, write DNABERT2 in mdoel instead of dataloader so that we can track gradiate if we want. Checkout how to implement freeze gradiant. `freeze: bool`
 
 ## Data
 
