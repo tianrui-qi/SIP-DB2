@@ -35,7 +35,7 @@ class DNADataset(Dataset):
             samfile = pysam.AlignmentFile(
                 os.path.join(self.bam_load_fold, f"{id}.bam"), "r"
             )
-            chr_list = list(samfile.references)[:1]    # 1-22, X, Y, M
+            chr_list = list(samfile.references)[:25]    # 1-22, X, Y, M
             # chromosome
             for chr in tqdm.tqdm(
                 range(len(chr_list)), leave=False, dynamic_ncols=True,
