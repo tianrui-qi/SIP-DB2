@@ -53,7 +53,7 @@ class DNADataset(torch.utils.data.Dataset):
                     leave=False, dynamic_ncols=True,
                     unit="read", desc=f"chromosome {chr_list[chr]}", 
                 ):
-                    position = read.reference_start     # 0-based
+                    pos = read.reference_start  # 0-based
                     sequence = read.query_sequence
                     quality  = read.query_qualities
 
@@ -68,7 +68,7 @@ class DNADataset(torch.utils.data.Dataset):
                     quality[0] < self.quality_threshold:
                         sequence = sequence[1:]
                         quality = quality[1:]
-                        position += 1
+                        pos += 1
                     while len(quality) > 0 and \
                     quality[-1] < self.quality_threshold:
                         sequence = sequence[:-1]
@@ -80,12 +80,17 @@ class DNADataset(torch.utils.data.Dataset):
 
                     # save
                     sequence_list.append(sequence)
-                    coord_list.append([chr, position])
+                    coord_list.append([chr, pos])
                     label_list.append(label)
             samfile.close()
 
         coord_list = torch.tensor(coord_list, dtype=torch.float32)
         label_list = torch.tensor(label_list, dtype=torch.float32)
+
+        # normalization
+        coord_list[:, 0] /= 24      # 25 chromosomes, 0-based
+        coord_list[:, 1] /= 2.5e8   # 2.5e8 bp in human genome
+
         return sequence_list, coord_list, label_list
 
     def __getitem__(self, index) -> Tuple[str, Tensor, Tensor]:
