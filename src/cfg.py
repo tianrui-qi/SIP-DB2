@@ -15,7 +15,8 @@ class Config:
             "length_threshold" : 96,
         }
         self.model = {
-            "feats": [768, 4096, 4096, 4096, 4096, 1]
+            "feats_coord": [2, 2048, 768],
+            "feats": [768, 8192, 8192, 4096, 4096, 1]
         }
         self.runner = {
             # train
