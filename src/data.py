@@ -16,10 +16,12 @@ __all__ = ["DNADataset"]
 
 class DNADataset(torch.utils.data.Dataset):
     def __init__(
-        self, bam_load_fold: str, sample_list: List[Tuple[str, int]],
+        self, len: int,
+        bam_load_fold: str, sample_list: List[Tuple[str, int]],
         quality_threshold: float, length_threshold: int,
         **kwargs
     ) -> None:
+        self.len = len
         # path
         self.bam_load_fold = bam_load_fold
         self.sample_list = sample_list  # list of sample (id, label)
@@ -101,4 +103,4 @@ class DNADataset(torch.utils.data.Dataset):
         return sequence, coord, label
 
     def __len__(self) -> int:
-        return len(self.sequence_list)
+        return self.len

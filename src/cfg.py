@@ -3,7 +3,8 @@ __all__ = ["Config"]
 
 class Config:
     def __init__(self, **kwargs) -> None:
-        self.data = {
+        self.trainset = {
+            "len": 4096 * 100,
             "bam_load_fold": "data/bam",
             "sample_list": [    # list of sample (id, label)
                 ("SRR8924593", 0),  # BCC tumor     pre  anti-PD-1
@@ -21,13 +22,14 @@ class Config:
         self.runner = {
             # train
             "max_epoch": 800, 
-            "accumu_steps": 256, 
+            "accumu_steps": 1, 
             # checkpoint
             "ckpt_save_fold": "ckpt/" + self.__class__.__name__,
             "ckpt_load_path": "",       # path without .ckpt
             "ckpt_load_lr"  : False,    # load lr from ckpt
             # data
-            "batch_size": 1, 
+            "batch_size": 4096, 
+            "num_workers": 38,
             # optimizer
             "lr": 1e-4,
         }
