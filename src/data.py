@@ -1,15 +1,20 @@
-from torch.utils.data import Dataset
+import torch
+import torch.utils.data
+from torch import Tensor
 
 import os
-import tqdm
+import sys
+if 'ipykernel' in sys.modules:
+    import tqdm.notebook as tqdm
+else:
+    import tqdm     # since tqdm does not work in jupyter properly
 import pysam
-import random
 from typing import List, Tuple
 
 __all__ = ["DNADataset"]
 
 
-class DNADataset(Dataset):
+class DNADataset(torch.utils.data.Dataset):
     def __init__(
         self, bam_load_fold: str, sample_list: List[Tuple[str, int]],
         quality_threshold: float, length_threshold: int,
@@ -23,10 +28,11 @@ class DNADataset(Dataset):
         self.length_threshold = length_threshold
 
         # data
-        self.read_list = self._setUp()  # [(chr, position, sequence, label)]
+        self.sequence_list, self.coord_list, self.label_list = self._setUp()
 
-    def _setUp(self) -> List[Tuple[int, int, str, int]]:
-        read_list = []
+    def _setUp(self) -> Tuple[List[str], Tensor, Tensor]:
+        sequence_list, coord_list, label_list = [], [], []
+
         # sample
         for (id, label) in tqdm.tqdm(
             self.sample_list, leave=False, dynamic_ncols=True, 
@@ -50,7 +56,13 @@ class DNADataset(Dataset):
                     position = read.reference_start     # 0-based
                     sequence = read.query_sequence
                     quality  = read.query_qualities
-            
+
+                    # filter by flag
+                    if not read.is_paired: continue
+                    if not read.is_proper_pair: continue
+                    if read.is_unmapped: continue
+                    #if read.mate_is_unmapped: continue
+
                     # cut low quality bases at beginning and end
                     while len(quality) > 0 and \
                     quality[0] < self.quality_threshold:
@@ -62,16 +74,26 @@ class DNADataset(Dataset):
                         sequence = sequence[:-1]
                         quality = quality[:-1]
 
-                    # skip short reads
+                    # filter by read length
                     if len(sequence) < self.length_threshold: 
                         continue
 
-                    read_list.append((chr, position, sequence, label))
+                    # save
+                    sequence_list.append(sequence)
+                    coord_list.append([chr, position])
+                    label_list.append(label)
             samfile.close()
-        return read_list
 
-    def __getitem__(self, index) -> Tuple[int, int, str, int]:
-        return random.choice(self.read_list)
+        coord_list = torch.tensor(coord_list, dtype=torch.float32)
+        label_list = torch.tensor(label_list, dtype=torch.float32)
+        return sequence_list, coord_list, label_list
+
+    def __getitem__(self, index) -> Tuple[str, Tensor, Tensor]:
+        index = torch.randint(0, len(self), (1,)).item()
+        sequence = self.sequence_list[index]
+        coord    = self.coord_list[index]
+        label    = self.label_list[index]
+        return sequence, coord, label
 
     def __len__(self) -> int:
-        return len(self.read_list)
+        return len(self.sequence_list)
