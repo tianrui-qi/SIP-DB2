@@ -37,8 +37,7 @@ class DNADataset(torch.utils.data.Dataset):
 
         # sample
         for (id, label) in tqdm.tqdm(
-            self.sample_list, leave=False, dynamic_ncols=True, 
-            unit="sample", desc="_setUp", 
+            self.sample_list, dynamic_ncols=True, unit="sample", desc="_setUp", 
         ):
             samfile = pysam.AlignmentFile(
                 os.path.join(self.bam_load_fold, f"{id}.bam"), "r"
