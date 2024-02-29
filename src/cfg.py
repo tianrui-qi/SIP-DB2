@@ -5,7 +5,7 @@ class Config:
     def __init__(self, **kwargs) -> None:
         self.trainset = {
             "len": 4096 * 100,
-            "bam_load_fold": "data/bam",
+            "bam_load_fold": "/mnt/efs_v2/tag_onc/users/tianrui.qi/TCGA-Onc/data/bam/",
             "sample_list": [    # list of sample (id, label)
                 ("SRR8924593", 0),  # BCC tumor     pre  anti-PD-1
                 ("SRR8924590", 1),  # BCC tumor     post anti-PD-1
