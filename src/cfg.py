@@ -21,6 +21,7 @@ class Config:
         }
         self.runner = {
             # train
+            "device": "cuda",
             "max_epoch": 800, 
             "accumu_steps": 1, 
             # checkpoint
