@@ -5,7 +5,7 @@ class Config:
     def __init__(self, **kwargs) -> None:
         data_fold = "/mnt/efs_v2/tag_onc/users/tianrui.qi/TCGA-Onc/data/"
         self.trainset = {
-            "num": 2048 * 100,
+            "num": 256 * 1000,
             # path
             "snp_load_path": data_fold + "snp.tsv",
             "bam_load_fold": data_fold + "bam/",    # bam_load_fold/{id}.bam
@@ -22,7 +22,7 @@ class Config:
             "length_threshold" : 96,
         }
         self.model = {
-            "feats_coord": [2, 2048, 768],
+            "feats_coord": [2, 1024, 768],
             "feats_final": [768, 4096, 4096, 4096, 4096, 1]
         }
         self.runner = {
@@ -35,9 +35,9 @@ class Config:
             "ckpt_load_path": "",       # path without .ckpt
             "ckpt_load_lr"  : False,    # load lr from ckpt
             # data
-            "batch_size": 2048, 
+            "batch_size": 256, 
             "num_workers": 8,
             # optimizer
-            "lr": 1e-4,
-            "T_max": 10,    # for CosineAnnealingLR
+            "lr": 5e-4,
+            "T_max": 20,    # for CosineAnnealingLR
         }

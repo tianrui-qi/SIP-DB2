@@ -62,7 +62,7 @@ class Trainer:
         """
 
     def fit(self) -> None:
-        #self._loadCkpt()
+        self._loadCkpt()
         for self.epoch in tqdm.tqdm(
             range(self.epoch, self.max_epoch+1), 
             total=self.max_epoch, desc=self.ckpt_save_fold, smoothing=0.0,
@@ -70,7 +70,7 @@ class Trainer:
         ):
             self._trainEpoch()
             self._updateLr()
-            #self._saveCkpt()
+            self._saveCkpt()
 
     def _trainEpoch(self) -> None:
         self.model.train()
@@ -94,13 +94,13 @@ class Trainer:
 
             # forward and backward
             with torch.cuda.amp.autocast(dtype=torch.float16):
-                predis = self.model(token, coord)
+                predis = self.model(token, coord).squeeze(-1)
                 loss_value  = torch.nn.functional.mse_loss(predis, label)
                 loss_value /= self.accumu_steps
             self.scaler.scale(loss_value).backward()
 
             # record: tensorboard
-            train_loss.append(loss_value.item() / len(predis))
+            train_loss.append(loss_value.item())
 
             # update model parameters
             if (i+1) % self.accumu_steps != 0: continue
@@ -137,7 +137,11 @@ class Trainer:
 
         torch.save({
             'epoch': self.epoch,  # epoch index start from 1
-            'model': self.model.state_dict(),
+            'feats_coord': self.model.feats_coord,
+            'feats_final': self.model.feats_final,
+            'dnabert2': self.model.dnabert2.state_dict(),
+            'fc_coord': self.model.fc_coord.state_dict(),
+            'fc_final': self.model.fc_final.state_dict(),
             'scaler': self.scaler.state_dict(),
             'optimizer': self.optimizer.state_dict(),
             'scheduler': self.scheduler.state_dict(),
@@ -149,7 +153,9 @@ class Trainer:
         ckpt = torch.load("{}.ckpt".format(self.ckpt_load_path))
         
         self.epoch = ckpt['epoch']+1  # start train from next epoch index
-        self.model.load_state_dict(ckpt['model'], strict=False)
+        self.model.dnabert2.load_state_dict(ckpt['dnabert2'])
+        self.model.fc_coord.load_state_dict(ckpt['fc_coord'])
+        self.model.fc_final.load_state_dict(ckpt['fc_final'])
         self.scaler.load_state_dict(ckpt['scaler'])
         
         if not self.ckpt_load_lr: return

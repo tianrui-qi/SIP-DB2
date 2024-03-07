@@ -13,6 +13,8 @@ class DNABERT2FC(nn.Module):
         self, feats_coord: List[int], feats_final: List[int], **kwargs
     ) -> None:
         super(DNABERT2FC, self).__init__()
+        self.feats_coord = feats_coord
+        self.feats_final = feats_final
         # token embedding
         self.dnabert2 = transformers.AutoModel.from_pretrained(
             "zhihan1996/DNABERT-2-117M", trust_remote_code=True
