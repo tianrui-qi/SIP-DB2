@@ -5,7 +5,7 @@ class Config:
     def __init__(self, **kwargs) -> None:
         data_fold = "/mnt/efs_v2/tag_onc/users/tianrui.qi/TCGA-Onc/data/"
         self.trainset = {
-            "num": 256 * 1000,
+            "num": 128 * 8 * 1000,
             # path
             "snp_load_path": data_fold + "snp.tsv",
             "bam_load_fold": data_fold + "bam/",    # bam_load_fold/{id}.bam
@@ -29,13 +29,13 @@ class Config:
             # train
             "device": "cuda",
             "max_epoch": 800, 
-            "accumu_steps": 1, 
+            "accumu_steps": 8, 
             # checkpoint
             "ckpt_save_fold": "ckpt/" + self.__class__.__name__,
             "ckpt_load_path": "",       # path without .ckpt
             "ckpt_load_lr"  : False,    # load lr from ckpt
             # data
-            "batch_size": 256, 
+            "batch_size": 128, 
             "num_workers": 8,
             # optimizer
             "lr": 5e-4,
