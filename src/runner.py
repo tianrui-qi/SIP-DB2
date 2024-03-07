@@ -78,7 +78,7 @@ class Trainer:
         # record: progress bar
         pbar = tqdm.tqdm(
             total=int(len(self.trainloader)/self.accumu_steps), 
-            desc='train_epoch', leave=False, unit="steps", smoothing=1.0, 
+            desc='train_epoch', leave=False, unit="steps", smoothing=0.0, 
             dynamic_ncols=True,
         )
         # record: tensorboard
