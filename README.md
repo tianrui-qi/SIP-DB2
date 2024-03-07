@@ -1,22 +1,5 @@
 # TCGA-Onc
 
-## Todo
-
--   check out aligned data structure and how to read them with python 
-    ([package](https://github.com/pysam-developers/pysam))
--   input
-    -   We annote the sequencing and filter the read we select. After running 
-        [VCF](https://docs.gdc.cancer.gov/Data/Bioinformatics_Pipelines/DNA_Seq_Variant_Calling_Pipeline/#variant-call-annotation-workflow), 
-        select read arond place that mark as variant. - ask Nanratha
-    -   Then, random select same number of read from elsewhere so that we have 
-        50% read from variant place that may directly relate to BCC (basal cell 
-        carcinoma) and 50% random read from none variant place which may same 
-        accorss all patient. `percentage: float` 
-    -   For the distribution of random selection, there are two way: either is 
-        select according to read of each chromosome, or we random select from 
-        all read of all chromosome. We plan to test the first one first and then
-        use second one to increase the generality. `random: bool`
-
 ## Data
 
 ### Structure of Data
