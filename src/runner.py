@@ -1,9 +1,10 @@
 import torch
-import torch.cuda.amp as amp
-import torch.optim as optim
-import torch.optim.lr_scheduler as lr_scheduler
+import torch.utils.data
+import torch.cuda.amp
+import torch.optim
+import torch.optim.lr_scheduler
 import torch.utils.tensorboard.writer as writer
-from torch.utils.data import DataLoader
+import transformers
 
 import os
 import tqdm
@@ -17,7 +18,7 @@ class Trainer:
     def __init__(
         self, device: str, max_epoch: int, accumu_steps: int, 
         ckpt_save_fold: str, ckpt_load_path: str, ckpt_load_lr: bool,
-        batch_size: int, num_workers: int, lr: float,
+        batch_size: int, num_workers: int, lr: float, T_max: int, 
         trainset: src.data.DNADataset, model: src.model.DNABERT2FC,
     ) -> None:
         # train
@@ -30,16 +31,22 @@ class Trainer:
         self.ckpt_load_lr   = ckpt_load_lr
 
         # data
-        self.trainloader = DataLoader(
+        self.trainloader = torch.utils.data.DataLoader(
             dataset=trainset, batch_size=batch_size, num_workers=num_workers, 
             persistent_workers=True, pin_memory=True, shuffle=True, 
+        )
+        # tokenizer, sequence [str] -> token [Tensor]
+        self.tokenizer = transformers.AutoTokenizer.from_pretrained(
+            "zhihan1996/DNABERT-2-117M", trust_remote_code=True
         )
         # model
         self.model = model.to(self.device)
         # optimizer
-        self.scaler    = amp.GradScaler()
-        self.optimizer = optim.Adam(self.model.parameters(), lr=lr)
-        self.scheduler = lr_scheduler.ExponentialLR(self.optimizer, gamma=0.95)
+        self.scaler    = torch.cuda.amp.GradScaler()
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
+        self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            self.optimizer, T_max=T_max
+        )
         # recorder
         self.writer = writer.SummaryWriter()
 
@@ -55,7 +62,7 @@ class Trainer:
         """
 
     def fit(self) -> None:
-        self._loadCkpt()
+        #self._loadCkpt()
         for self.epoch in tqdm.tqdm(
             range(self.epoch, self.max_epoch+1), 
             total=self.max_epoch, desc=self.ckpt_save_fold, smoothing=0.0,
@@ -63,7 +70,7 @@ class Trainer:
         ):
             self._trainEpoch()
             self._updateLr()
-            self._saveCkpt()
+            #self._saveCkpt()
 
     def _trainEpoch(self) -> None:
         self.model.train()
@@ -79,13 +86,15 @@ class Trainer:
 
         for i, (sequence, coord, label) in enumerate(self.trainloader):
             # put frames and labels in GPU
-            sequence = sequence
+            token = self.tokenizer(
+                sequence, return_tensors = 'pt', padding=True
+            )["input_ids"].squeeze(0).to(self.device)
             coord = coord.to(self.device)
             label = label.to(self.device)
 
             # forward and backward
-            with amp.autocast(dtype=torch.float16):
-                predis = self.model(sequence, coord)
+            with torch.cuda.amp.autocast(dtype=torch.float16):
+                predis = self.model(token, coord)
                 loss_value  = torch.nn.functional.mse_loss(predis, label)
                 loss_value /= self.accumu_steps
             self.scaler.scale(loss_value).backward()
@@ -112,7 +121,7 @@ class Trainer:
     @torch.no_grad()
     def _updateLr(self) -> None:
         # update learning rate
-        if self.scheduler.get_last_lr()[0] > 1e-10: self.scheduler.step()
+        self.scheduler.step()
 
         # record: tensorboard
         self.writer.add_scalar(

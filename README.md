@@ -39,7 +39,8 @@ TACG-Onc/data/
 ├── sam                         # aligned reads by bwa-mem2
 │   ├── SRR8924580.sam
 │   └── ...
-└── profile.txt
+├── profile.txt
+└── snp.tsv                     # genetic variation
 ```
 
 ### Unaligned Reads (FASTQ)

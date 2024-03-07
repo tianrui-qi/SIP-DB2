@@ -3,49 +3,37 @@ import torch.nn as nn
 from torch import Tensor
 import transformers
 
-from typing import List, Tuple
+from typing import List
 
 __all__ = ["DNABERT2FC"]
 
 
 class DNABERT2FC(nn.Module):
     def __init__(
-        self, feats_coord: List[int], feats: List[int], **kwargs
+        self, feats_coord: List[int], feats_final: List[int], **kwargs
     ) -> None:
         super(DNABERT2FC, self).__init__()
-        # DNABERT2, for sequence embedding
-        self.tokenizer = transformers.AutoTokenizer.from_pretrained(
-            "zhihan1996/DNABERT-2-117M", trust_remote_code=True
-        )
+        # token embedding
         self.dnabert2 = transformers.AutoModel.from_pretrained(
             "zhihan1996/DNABERT-2-117M", trust_remote_code=True
         )
-        # FC, for coord embedding
+        # coord embedding
         self.fc_coord = FC(feats_coord)
-        # FC, for final classification/regression
-        self.fc = FC(feats)
+        # final classification/regression
+        self.fc_final = FC(feats_final)
 
-    def forward(self, sequence: Tuple[str], coord: Tensor) -> Tensor:
-        ## sequence embedding by DNABERT2
-        # input
-        token = self.tokenizer(             # [B, N]
-            sequence, return_tensors = 'pt', padding=True
-        )["input_ids"]
-        # output
-        hidden_states = self.dnabert2(token)   # ( [B, N, 768], [B, 768] )
-        sequence_output = hidden_states[0]  # [B, N, 768]
-        #pooled_output  = hidden_states[1]  # [B, 768]
+    def forward(self, token: Tensor, coord: Tensor) -> Tensor:
+        # token embedding by DNABERT2
+        hidden_states = self.dnabert2(token)    # ( [B, N, 768], [B, 768] )
         # embedding with mean or max pooling
-        sequence_embedding = torch.mean(sequence_output, dim=1)     # [B, 768]
-        #sequence_embedding = torch.max(sequence_output, dim=1)[0]  # [B, 768]
+        # mean_embedding = torch.mean(hidden_states[0], dim=1)      # [B, 768]
+        # max_embedding  = torch.max(hidden_states[0], dim=1)[0]    # [B, 768]
+        token_embedding = torch.mean(hidden_states[0], dim=1)       # [B, 768]
 
-        ## coord embedding
+        # coord embedding
         coord_embedding = self.fc_coord(coord)
 
-        ## fc
-        x = self.fc(sequence_embedding + coord_embedding)
-
-        return x
+        return self.fc_final(token_embedding + coord_embedding)
 
 
 class FC(nn.Module):

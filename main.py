@@ -1,25 +1,28 @@
 import torch
 import torch.cuda
 import torch.backends.cudnn
-
-import numpy as np
+import transformers
 
 import os
 import random
+import numpy as np
 
 import src
+
 
 torch.backends.cudnn.enabled   = True
 torch.backends.cudnn.benchmark = True
 torch.backends.cudnn.deterministic = True
+transformers.logging.set_verbosity_error()
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
 def main():
     setSeed(42)
     config = src.Config()
     src.Trainer(**config.runner,
-        trainset = src.DNADataset(**config.trainset),
-        model = src.DNABERT2FC(**config.model),
+        trainset=src.DNADataset(**config.trainset),
+        model=src.DNABERT2FC(**config.model),
     ).fit()
 
 
