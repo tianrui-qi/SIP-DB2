@@ -7,7 +7,7 @@ class Config:
         self.trainset = {
             "num": 128 * 8 * 1000,
             # path
-            "snp_load_path": data_fold + "snp.tsv",
+            "snp_load_path": data_fold + "snp/snp_filter.tsv",
             "bam_load_fold": data_fold + "bam/",    # bam_load_fold/{id}.bam
             # sample
             "sample_list": [    # list of sample (id, label)
@@ -17,7 +17,8 @@ class Config:
                 ("SRR8924592", 1),  # normal skin   post anti-PD-1
             ],
             # filter
-            "pos_range": 64,
+            "pval_threshold": 1e-1,
+            "pos_range": 64,    # since averge read length is 124
             "quality_threshold": 16,
             "length_threshold" : 96,
         }

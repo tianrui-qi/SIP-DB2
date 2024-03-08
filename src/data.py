@@ -2,10 +2,11 @@ import torch
 import torch.utils.data
 from torch import Tensor
 
+import pandas as pd
+
 import os
 import pysam
 import random
-import pandas as pd
 from typing import List, Tuple
 
 __all__ = ["DNADataset"]
@@ -15,8 +16,9 @@ class DNADataset(torch.utils.data.Dataset):
     def __init__(
         self, num: int,
         snp_load_path: str, bam_load_fold: str, 
-        sample_list: List[Tuple[str, int]],
-        pos_range: int, quality_threshold: float, length_threshold: int,
+        sample_list: List[Tuple[str, int]], 
+        pval_threshold: float, pos_range: int, 
+        quality_threshold: float, length_threshold: int,
         **kwargs
     ) -> None:
         self.num = num
@@ -30,8 +32,12 @@ class DNADataset(torch.utils.data.Dataset):
         self.quality_threshold = quality_threshold
         self.length_threshold  = length_threshold
 
+        # snp
+        self.snp = pd.read_csv(snp_load_path, sep="\t")
+        self.snp = self.snp[self.snp["Pval"] <= pval_threshold]
+        self.snp = self.snp[["Chr", "Pos"]]
+
         # data
-        self.snp = pd.read_csv(snp_load_path, usecols=["Chr", "Pos"], sep="\t")
         self.sequence_list = []     # dna sequence of reads
         self.coord_list = []        # [chromosome, position] of reads
         self.label_list = []        # reads from pre or post anti-PD-1 sample

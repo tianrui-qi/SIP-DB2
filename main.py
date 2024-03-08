@@ -3,11 +3,15 @@ import torch.cuda
 import torch.backends.cudnn
 import transformers
 
-import os
-import random
 import numpy as np
 
+import os
+import random
+import warnings
+
 import src
+
+__all__ = []
 
 
 torch.backends.cudnn.enabled   = True
@@ -15,6 +19,7 @@ torch.backends.cudnn.benchmark = True
 torch.backends.cudnn.deterministic = True
 transformers.logging.set_verbosity_error()
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
+warnings.filterwarnings("ignore", message="Unable to import Triton*")
 
 
 def main():
