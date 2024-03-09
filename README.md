@@ -155,11 +155,11 @@ snp = pd.read_csv("data/snp/snp_filter.tsv", sep="\t")
 ```
 
 We can reduce the number of variant by setting a p-value threshold. Table below
-shows the **number of variant (bp)** in total and in each chromosome with 
+shows the number of variant (bp) in total and in each chromosome with 
 different p-value threshold (<=) of variants. For example, (Chr 1, 1e-1) is
 536,961 means there are 536,961 variants in chromosome 1 with p-value <= 1e-1.
 | Pval |    Total    |   Chr  1  |   Chr  2  |   Chr  3  |   Chr  4  |   Chr  5  |   Chr  6  |   Chr  7  |   Chr  8  |   Chr  9  |   Chr 10  |   Chr 11  |   Chr 12  |   Chr 13  |   Chr 14  |   Chr 15  |   Chr 16  |   Chr 17  |   Chr 18  |   Chr 19  |   Chr 20  |   Chr 21  |   Chr 22  |   Chr  X  |
-|:----:|------------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|
+|-----:|------------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|
 | None |  65,970,269 | 5,192,193 | 5,381,111 | 4,440,612 | 4,293,765 | 3,998,634 | 3,849,370 | 3,655,832 | 3,445,147 | 2,786,893 | 3,085,913 | 3,207,132 | 3,051,380 | 2,177,228 | 2,023,149 | 1,871,722 | 2,175,604 | 1,983,958 | 1,736,268 | 1,684,923 | 1,457,013 | 835,761   | 943,503   | 2,693,158 |
 | 1e-0 |  65,970,269 | 5,192,193 | 5,381,111 | 4,440,612 | 4,293,765 | 3,998,634 | 3,849,370 | 3,655,832 | 3,445,147 | 2,786,893 | 3,085,913 | 3,207,132 | 3,051,380 | 2,177,228 | 2,023,149 | 1,871,722 | 2,175,604 | 1,983,958 | 1,736,268 | 1,684,923 | 1,457,013 | 835,761   | 943,503   | 2,693,158 |
 | 1e-1 |   6,781,253 | 536,961   | 550,990   | 455,233   | 437,656   | 402,913   | 416,624   | 376,996   | 349,708   | 292,190   | 319,480   | 331,557   | 310,192   | 227,428   | 200,446   | 197,171   | 220,464   | 202,259   | 173,601   | 166,596   | 158,852   | 85,156    | 94,080    | 274,700   |
@@ -182,9 +182,9 @@ with different p-value threshold (<=) and store each sample `$id` and chromosome
 `$chr` result in `data/csv/$id/$chr.csv` as dataframe with columns `sequence`, 
 `pos`, `1e-0`, `1e-1`, `1e-2`, `1e-3`, and `1e-4`. We only consider p-value to 
 `1e-4` since the order of magnitude of variants number does not change a lots 
-after. For all downstream analysis, we directly load the CSV file instead of BAM
-since BAM is not easy to random index so that we can only go through the whole
-BAM to filter the reads we need, which is time-consuming.
+after. For downstream analysis, we load the CSV file instead of BAM since BAM is 
+hard to random index; we can only go through the whole BAM to filter reads, 
+which is time-consuming.
 
 Please refer to [util/bam2csv.py](util/bam2csv.py) for the implementation or
 type `python util/bam2csv.py -h` to see the usage and options. **The algorithm 
@@ -227,13 +227,13 @@ print(csv.head())
 | 29410 | GTGCGATTAGACAGTTACTATCTTTCCCTGGTTGACGGATTAGAGT... | 843184 | 2.0 | 1.0 |  1.0 |   1.0 |    1.0 | 
 | 29417 | TCAAGCAGGAAGCTGGGTCTGCGGGGAGTAGGGTGGGGCTGGTTCT... | 844593 | 1.0 | 1.0 |  1.0 |   1.0 |    1.0 | 
 
-Table below shows the **number of reads** of sample `SRR8924580` in total and in
+Table below shows number of reads of sample `SRR8924580` in total and in
 each chromosome, without and with filter that reads must cover at least one 
 variants, with different p-value threshold (<=) of variants. For example, 
 (Chr 1, 1e-1) is 5,716,005 means there are 5,716,005 reads in chromosome 1 such 
 that the read cover at least one variant with p-value <= 1e-1.
 | Pval |    Total    |   Chr  1   |   Chr  2   |   Chr  3  |   Chr  4  |   Chr  5  |   Chr  6  |   Chr  7  |   Chr  8  |   Chr  9  |   Chr 10  |   Chr 11  |   Chr 12  |   Chr 13  |   Chr 14  |   Chr 15  |   Chr 16  |   Chr 17  |   Chr 18  |   Chr 19  |   Chr 20  |   Chr 21  |   Chr 22  |   Chr  X  |
-|:----:|------------:|-----------:|-----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|
+|-----:|------------:|-----------:|-----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|
 | None | 145,716,728 | 13,713,075 | 11,222,726 | 8,635,490 | 6,631,021 | 7,126,372 | 7,773,282 | 7,804,439 | 5,498,483 | 5,466,443 | 6,174,646 | 7,798,636 | 7,521,751 | 3,176,056 | 4,799,089 | 5,053,137 | 5,751,214 | 6,832,248 | 2,753,185 | 7,128,590 | 3,316,788 | 1,810,358 | 3,002,541 | 6,727,158 | 
 | 1e-0 | 137,625,500 | 12,993,039 | 10,642,334 | 8,258,359 | 6,307,024 | 6,773,825 | 7,443,878 | 7,381,957 | 5,245,265 | 5,098,060 | 5,860,598 | 7,531,567 | 7,248,858 | 3,040,552 | 4,540,604 | 4,569,439 | 5,306,983 | 6,470,054 | 2,629,125 | 6,925,000 | 3,147,015 | 1,497,223 | 2,794,874 | 5,919,867 | 
 | 1e-1 |  59,307,008 |  5,716,005 |  4,456,531 | 3,465,246 | 2,581,947 | 2,790,770 | 3,261,227 | 3,196,231 | 2,229,721 | 2,306,002 | 2,463,095 | 3,504,961 | 3,129,057 | 1,251,705 | 1,880,598 | 1,994,763 | 2,580,641 | 2,985,427 | 1,073,218 | 3,472,135 | 1,434,429 |   695,244 | 1,278,749 | 1,559,306 | 
