@@ -179,7 +179,7 @@ mapped. Then, cut bases with quality less than `quality_thresh=16` at
 beginning and end of reads and short reads with length less than 
 `length_thresh=96`. Then, calculate the number of variant (bp) in each read
 with different p-value threshold (<=) and store each sample `$id` and chromosome
-`$chr` result in `data/csv/$id/$chr.csv` as dataframe with header `sequence`, 
+`$chr` result in `data/csv/$id/$chr.csv` as dataframe with columns `sequence`, 
 `pos`, `1e-0`, `1e-1`, `1e-2`, `1e-3`, and `1e-4`. We only consider p-value to 
 `1e-4` since the order of magnitude of variants number does not change a lots 
 after. For all downstream analysis, we directly load the CSV file instead of BAM

@@ -13,7 +13,7 @@ else:
 __all__ = []
 
 
-def main():
+def main() -> None:
     args = getArgs()
     bam2csv(**vars(args))
 
@@ -67,7 +67,7 @@ def getArgs():
 def bam2csv(
     bam_load_path: str, snp_load_path: str, csv_save_fold: str,
     quality_thresh: int = 16, length_thresh: int = 96,
-) -> int:
+) -> None:
     pval_thresh_list = [1e-0, 1e-1, 1e-2, 1e-3, 1e-4, ]
     chr_list = [str(i) for i in range(1, 23)] + ["X"]   # BAM naming convention
 
@@ -96,6 +96,8 @@ def bam2csv(
         # check if this chromosome already processed
         if os.path.exists(csv_save_path): continue
 
+        # dataframe with column "sequence", "pos", 
+        # str(1e-0), str(1e-1), str(1e-2), str(1e-3), str(1e-4)
         read_dict = {key: [] for key in ["sequence", "pos"] + pval_thresh_list}
         for read in tqdm.tqdm(
             pysam.AlignmentFile(bam_load_path, "rb").fetch(chr), 
