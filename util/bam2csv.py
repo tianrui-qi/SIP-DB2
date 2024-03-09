@@ -36,9 +36,9 @@ def getArgs():
         help="Go through each chromosome's reads in BAM file and calculate " + 
         "num of variants in each read with different p-value threshold. Then " +
         "save each chromosome as seperate CSV file with header: " +
-        "`sequence`, `pos`, `1e-0`, `1e-1`, `1e-2`, `1e-3`, `1e-4`. " + 
+        "`sequence`, `pos`, `1e-0`, `1e-1`, `1e-2`, `1e-3`, and `1e-4`. " + 
         "We only consider p-value to 1e-4 since the order of magnitude of" +
-        "number of variants will not change a lots after 1e-4. Default: " +
+        "number of variants does not change a lots after. Default: " +
         "assume `bam_load_path` has a structure of `data_fold/bam/id.bam`, " +
         "save csv to `data_fold/csv/id/chr.csv` where chr is 1-22 and X."
     )
