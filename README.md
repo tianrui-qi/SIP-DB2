@@ -187,7 +187,11 @@ since BAM is not easy to random index so that we can only go through the whole
 BAM to filter the reads we need, which is time-consuming.
 
 Please refer to [util/bam2csv.py](util/bam2csv.py) for the implementation or
-type `python util/bam2csv.py -h` to see the usage and options. For example,
+type `python util/bam2csv.py -h` to see the usage and options. **The algorithm 
+can process 45000 reads per second, 1 hour for one sample, and need about 40GB 
+memory.** It's not optimized for parallel computing; you can open multiple 
+terminals to process samples at the same time if your have enough memory. For 
+example,
 ```bash
 # usage
 python util/bam2csv.py -B data/bam/<id>.bam [-S data/snp/snp_filter.tsv] [-C data/csv/<id>/] [-q 16] [-l 96]
@@ -197,12 +201,8 @@ $id = "SRR8924580"; python util/bam2csv.py -B data/bam/$id.bam;
 
 # e.g., sample `SRR8924580` to `SRR8924602`, powershell
 foreach ($i in 580..602) { $id = "SRR8924$i"; python util/bam2csv.py -B data/bam/$id.bam; }
-```
-**The algorithm can process about 45000 reads per second, about 1 hour for one 
-sample, and need about 40GB memory.** It's not optimized for parallel computing; 
-you can open multiple terminals to run multiple samples at the same time if your
-have enough memory, i.e,
-```bash
+
+# e.g., sample `SRR8924580` to `SRR8924602`, 3 process parallel, powershell
 # terminal 1
 foreach ($i in 580..587) { $id = "SRR8924$i"; python util/bam2csv.py -B data/bam/$id.bam; }
 # terminal 2
@@ -210,14 +210,22 @@ foreach ($i in 588..595) { $id = "SRR8924$i"; python util/bam2csv.py -B data/bam
 # terminal 3
 foreach ($i in 596..602) { $id = "SRR8924$i"; python util/bam2csv.py -B data/bam/$id.bam; }
 ```
-Then, to use it,
+Then, to use the `.csv`,
 ```python
 import pandas as pd
 # sample id SRR8924580, chromosome 1
 csv = pd.read_csv("data/csv/SRR8924580/1.csv")
 # filter reads that cover at least one variants with p-value<=1e-4
-csv = csv[csv[str(1e-4)]>0]
+csv = csv[csv[str(1e-4)]>=1]
+print(csv.head())
 ```
+|       |                                          sequence |    pos | 1.0 | 0.1 | 0.01 | 0.001 | 0.0001 |
+|------:|:--------------------------------------------------|-------:|-----|-----|------|-------|--------|
+| 29079 | CAACCAGGAAGCAAGTGTGGAGCTGGGAGTGAGGGAGCTGGGTGTG... | 834338 | 4.0 | 2.0 |  1.0 |   1.0 |    1.0 | 
+| 29080 | GCAAGTGTGGAGCTGGGAGTGAGGGAGCTGGGTGTGGAGATCAGGG... | 834348 | 4.0 | 2.0 |  1.0 |   1.0 |    1.0 |
+| 29409 | CTGGGACTTTTTTCCTCTGAATTCAAAGGTGGGGCAGTCTAGGCAC... | 843084 | 5.0 | 1.0 |  1.0 |   1.0 |    1.0 | 
+| 29410 | GTGCGATTAGACAGTTACTATCTTTCCCTGGTTGACGGATTAGAGT... | 843184 | 2.0 | 1.0 |  1.0 |   1.0 |    1.0 | 
+| 29417 | TCAAGCAGGAAGCTGGGTCTGCGGGGAGTAGGGTGGGGCTGGTTCT... | 844593 | 1.0 | 1.0 |  1.0 |   1.0 |    1.0 | 
 
 Table below shows the **number of reads** of sample `SRR8924580` in total and in
 each chromosome, without and with filter that reads must cover at least one 
