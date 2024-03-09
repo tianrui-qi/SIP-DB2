@@ -11,6 +11,13 @@ TACG-Onc/data/
 │   ├── SRR8924580.bam.bai          # corresponding index
 │   └── ...
 ├── bwa-mem2-2.2.1_x64-linux    # bwa-mem2, software for alignment
+├── csv                         # each reads' variant num with diff p-val thresh
+│   ├── SRR8924580
+│   │   ├──  1.csv                      # chromosome 1
+│   │   ├── ...
+│   │   ├── 22.csv
+│   │   └──  X.csv
+│   └── ...
 ├── fastq                       # unaligned reads
 │   ├── SRR8924580                  # sample id
 │   │   ├── *R1.fastq.gz                # read 1
