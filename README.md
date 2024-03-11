@@ -2,48 +2,54 @@
 
 ## Data
 
-### Structure of Data
+## Data Structure
 
 ```bash
 TACG-Onc/data/
-├── bam                         # sorted aligned reads by Samtools
-│   ├── SRR8924580.bam              # sorted bam file
-│   ├── SRR8924580.bam.bai          # corresponding index
-│   └── ...
 ├── bwa-mem2-2.2.1_x64-linux    # bwa-mem2, software for alignment
-├── csv                         # each reads' variant num with diff p-val thresh
-│   ├── SRR8924580
-│   │   ├──  1.csv                      # chromosome 1
-│   │   ├── ...
-│   │   ├── 22.csv
-│   │   └──  X.csv
-│   └── ...
-├── fastq                       # unaligned reads
-│   ├── SRR8924580                  # sample id
-│   │   ├── *R1.fastq.gz                # read 1
-│   │   └── *R2.fastq.gz                # read 2
-│   └── ...
-├── ref
-│   └── ref.fa                      # refernece genome
+├── public                      # public data from Stanford, 23 samples
+│   ├── bam                         # sorted aligned reads by Samtools
+│   │   ├── SRR8924580.bam              # sorted bam file
+│   │   ├── SRR8924580.bam.bai          # corresponding index
+│   │   └── ...
+│   ├── csv                         # reads' variant num with diff p-val thresh
+│   │   ├── SRR8924580                  # sample id
+│   │   │   ├──  1.csv                      # chromosome 1
+│   │   │   ├── ...
+│   │   │   ├── 22.csv
+│   │   │   └──  X.csv
+│   │   └── ...
+│   ├── fastq                       # unaligned reads
+│   │   ├── SRR8924580                  # sample id
+│   │   │   ├── *R1.fastq.gz                # read 1
+│   │   │   └── *R2.fastq.gz                # read 2
+│   │   └── ...
+│   ├── sam                         # aligned reads by bwa-mem2
+│   │   ├── SRR8924580.sam
+│   │   └── ...
+│   └── profile.txt
+├── ref                         # reference for alignment
+│   └── ref.fa                      # reference genome
 │   └── ...                         # corresponding index
-├── sam                         # aligned reads by bwa-mem2
-│   ├── SRR8924580.sam
-│   └── ...
 ├── snp                         # genetic variation
 │   ├── snp.tsv                     # raw SNPs
 │   └── snp_filter.tsv              # only keep col `Chr`, `Pos`, `Pval`
-└── profile.txt
 ```
+
+## Preprocessing Pipeline
+
+We use publice dataset from Stanford University as example. 
 
 ### Unaligned Reads (FASTQ)
 
-Raw FASTQ data address is `data/fastq/`, contain 23 samples, copy from 
+Raw FASTQ data address is `data/public/fastq/`, contain 23 samples, copy from 
 `/mnt/s3/rgc-tag-onc-jh1-resources/2019_natBiotech_anneChang_bccWXS/fastq/`.
 For each sample, we have two reads, i.e., `*R1.fastq.gz` and `*R2.fastq.gz`. 
-The profile of these data can be find in `data/profile.txt`, copy from 
+The profile of these data can be find in `data/public/profile.txt`, copy from 
 `/mnt/s3/rgc-tag-onc-jh1-resources/2019_natBiotech_anneChang_bccWXS/SraRunTable_PRJNA533341_2018_bccWXS.txt`.
 
-To mount the S3 bucket `rgc-tag-onc-jh1-resources` (like HDD/SSD in desktop) of raw data, follow the [How to guide](https://confluence.regeneron.com/display/SUG/How+to+Install%2C+Configure%2C+and+Use+FUSE+for+S3+Mount).
+To mount the S3 bucket `rgc-tag-onc-jh1-resources` (like HDD/SSD in desktop) of 
+raw data, follow the [How to guide](https://confluence.regeneron.com/display/SUG/How+to+Install%2C+Configure%2C+and+Use+FUSE+for+S3+Mount).
 First, type `id` in cmd and copy the `uid`. Then, run cmd
 ```bash
 # usage
@@ -69,20 +75,20 @@ data/bwa-mem2-2.2.1_x64-linux/bwa-mem2 index data/ref/ref.fa
 where the reference genome `data/ref/ref.fa` copy from 
 `/mnt/efs_v2/tag_onc/users/hossein.khiabanian/ref/genome.fa`
 
-Then, we run the alignment and store the result of each sample in 
-`data/sam/*.sam`:
+Then, we run alignment and store result of each sample in 
+`data/public/sam/*.sam`:
 ```bash
 # usage
-data/bwa-mem2-2.2.1_x64-linux/bwa-mem2 mem -t <num_threads> data/ref/ref.fa data/fastq/<id>/*R1.fastq.gz data/fastq/<id>/*R2.fastq.gz > data/sam/<id>.sam
+data/bwa-mem2-2.2.1_x64-linux/bwa-mem2 mem -t <num_threads> data/ref/ref.fa data/public/fastq/<id>/*R1.fastq.gz data/public/fastq/<id>/*R2.fastq.gz > data/public/sam/<id>.sam
 
 # e.g., sample `SRR8924580`, powershell
-$id = "SRR8924580"
-data/bwa-mem2-2.2.1_x64-linux/bwa-mem2 mem -t 40 data/ref/ref.fa data/fastq/$id/*R1.fastq.gz data/fastq/$id/*R2.fastq.gz > data/sam/$id.sam
+$id = "SRR8924580";
+data/bwa-mem2-2.2.1_x64-linux/bwa-mem2 mem -t 40 data/ref/ref.fa data/public/fastq/$id/*R1.fastq.gz data/public/fastq/$id/*R2.fastq.gz > data/public/sam/$id.sam;
 
 # e.g., sample `SRR8924580` to `SRR8924602`, powershell
 foreach ($i in 580..602) { 
     $id = "SRR8924$i"; 
-    data/bwa-mem2-2.2.1_x64-linux/bwa-mem2 mem -t 40 data/ref/ref.fa data/fastq/$id/*R1.fastq.gz data/fastq/$id/*R2.fastq.gz > data/sam/$id.sam; 
+    data/bwa-mem2-2.2.1_x64-linux/bwa-mem2 mem -t 40 data/ref/ref.fa data/public/fastq/$id/*R1.fastq.gz data/public/fastq/$id/*R2.fastq.gz > data/public/sam/$id.sam; 
 }
 ```
 
@@ -112,24 +118,24 @@ Then, to convert `.sam` file into `.bam` file,
 ```bash
 # usage
 ## convert SAM file to BAM file
-samtools view -@ <num_threads> -S -b data/sam/<id>.sam > data/bam/<id>.bam
+samtools view -@ <num_threads> -S -b data/public/sam/<id>.sam > data/public/bam/<id>.bam
 ## sort the BAM file
-samtools sort -@ <num_threads> data/bam/<id>.bam -o data/bam/<id>.bam
+samtools sort -@ <num_threads> data/public/bam/<id>.bam -o data/public/bam/<id>.bam
 ## index the sorted BAM file
-samtools index -@ <num_threads> data/bam/<id>.bam
+samtools index -@ <num_threads> data/public/bam/<id>.bam
 
 # e.g., sample `SRR8924580`, powershell
-$id = "SRR8924580"
-samtools view -@ 40 -S -b data/sam/$id.sam > data/bam/$id.bam
-samtools sort -@ 40 data/bam/$id.bam -o data/bam/$id.bam
-samtools index -@ 40 data/bam/$id.bam
+$id = "SRR8924580";
+samtools view -@ 40 -S -b data/public/sam/$id.sam > data/public/bam/$id.bam;
+samtools sort -@ 40 data/public/bam/$id.bam -o data/public/bam/$id.bam;
+samtools index -@ 40 data/public/bam/$id.bam;
 
 # e.g., sample `SRR8924580` to `SRR8924602`, powershell
 foreach ($i in 580..602) { 
     $id = "SRR8924$i"; 
-    samtools view -@ 40 -S -b data/sam/$id.sam > data/bam/$id.bam;
-    samtools sort -@ 40 data/bam/$id.bam -o data/bam/$id.bam;
-    samtools index -@ 40 data/bam/$id.bam;
+    samtools view -@ 40 -S -b data/public/sam/$id.sam > data/public/bam/$id.bam;
+    samtools sort -@ 40 data/public/bam/$id.bam -o data/public/bam/$id.bam;
+    samtools index -@ 40 data/public/bam/$id.bam;
 }
 ```
 We can then use [pysam](https://pysam.readthedocs.io/en/stable/#) to read the 
@@ -175,46 +181,42 @@ different p-value threshold (<=) of variants. For example, (Chr 1, 1e-1) is
 ## Filter Reads (BAM & SNPs -> CSV)
 
 For each read, filter the read that is not paired, not properly paired, and not 
-mapped. Then, cut bases with quality less than `quality_thresh=16` at 
-beginning and end of reads and short reads with length less than 
-`length_thresh=96`. Then, calculate the number of variant (bp) in each read
-with different p-value threshold (<=) and store each sample `$id` and chromosome
-`$chr` result in `data/csv/$id/$chr.csv` as dataframe with columns `sequence`, 
-`pos`, `1e-0`, `1e-1`, `1e-2`, `1e-3`, and `1e-4`. We only consider p-value to 
-`1e-4` since the order of magnitude of variants number does not change a lots 
-after. For downstream analysis, we load the CSV file instead of BAM since BAM is 
-hard to random index; we can only go through the whole BAM to filter reads, 
-which is time-consuming.
+mapped. Then, cut bases with quality less than `quality_thresh=16` at beginning 
+and end of reads and short reads with length less than `length_thresh=96`. Then,
+calculate the number of variant (bp) in each read with different p-value 
+threshold (<=) and store each sample `$id` and chromosome `$chr` result in 
+`data/public/csv/$id/$chr.csv` as dataframe with columns `sequence`, `pos`, 
+`1e-0`, `1e-1`, `1e-2`, `1e-3`, and `1e-4`. We only consider p-value to `1e-4` 
+since the order of magnitude of variants number does not change a lots after. 
+For downstream analysis, we load the CSV file instead of BAM since BAM is hard 
+to random index; we can only go through the whole BAM to filter reads, which 
+is time-consuming.
 
 Please refer to [util/bam2csv.py](util/bam2csv.py) for the implementation or
 type `python util/bam2csv.py -h` to see the usage and options. **The algorithm 
 can process 45000 reads per second, 1 hour for one sample, and need about 40GB 
 memory.** It's not optimized for parallel computing; you can open multiple 
-terminals to process samples at the same time if your have enough memory. For 
-example,
+terminals to process samples at the same time if your have enough memory.
 ```bash
 # usage
-python util/bam2csv.py -B data/bam/<id>.bam [-S data/snp/snp_filter.tsv] [-C data/csv/<id>/] [-q 16] [-l 96]
+python util/bam2csv.py -B data/public/bam/<id>.bam -S data/snp/snp_filter.tsv [-C data/public/csv/<id>/] [-q 16] [-l 96]
 
 # e.g., sample `SRR8924580`, powershell
-$id = "SRR8924580"; python util/bam2csv.py -B data/bam/$id.bam;
+$id = "SRR8924580"; 
+python util/bam2csv.py -B data/public/bam/$id.bam -S data/snp/snp_filter.tsv;
 
 # e.g., sample `SRR8924580` to `SRR8924602`, powershell
-foreach ($i in 580..602) { $id = "SRR8924$i"; python util/bam2csv.py -B data/bam/$id.bam; }
-
-# e.g., sample `SRR8924580` to `SRR8924602`, 3 process parallel, powershell
-# terminal 1
-foreach ($i in 580..587) { $id = "SRR8924$i"; python util/bam2csv.py -B data/bam/$id.bam; }
-# terminal 2
-foreach ($i in 588..595) { $id = "SRR8924$i"; python util/bam2csv.py -B data/bam/$id.bam; }
-# terminal 3
-foreach ($i in 596..602) { $id = "SRR8924$i"; python util/bam2csv.py -B data/bam/$id.bam; }
+foreach ($i in 580..602) { 
+    $id = "SRR8924$i"; 
+    python util/bam2csv.py -B data/public/bam/$id.bam -S data/snp/snp_filter.tsv;
+}
+# for 3 process parallel, change each for loop to 580..587, 588..595, 596..602
 ```
 Then, to use the `.csv`,
 ```python
 import pandas as pd
 # sample id SRR8924580, chromosome 1
-csv = pd.read_csv("data/csv/SRR8924580/1.csv")
+csv = pd.read_csv("data/public/csv/SRR8924580/1.csv")
 # filter reads that cover at least one variants with p-value<=1e-4
 csv = csv[csv[str(1e-4)]>=1]
 print(csv.head())

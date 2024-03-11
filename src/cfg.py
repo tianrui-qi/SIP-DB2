@@ -8,7 +8,7 @@ class Config:
             "num": 128 * 8 * 1000,
             # path
             "snp_load_path": data_fold + "snp/snp_filter.tsv",
-            "bam_load_fold": data_fold + "bam/",    # bam_load_fold/{id}.bam
+            "bam_load_fold": data_fold + "public/bam/",
             # sample
             "sample_list": [    # list of sample (id, label)
                 ("SRR8924593", 0),  # BCC tumor     pre  anti-PD-1

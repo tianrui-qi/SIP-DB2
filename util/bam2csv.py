@@ -26,10 +26,8 @@ def getArgs():
         "recommended."
     )
     parser.add_argument(
-        "-S", type=str, required=False, dest="snp_load_path", default=None,
-        help="Path to the SNPs file that contain genetic variation, " + 
-        "optional. Default: assume `bam_load_path` has a structure of " + 
-        "`data_fold/bam/*.bam`, load SNPs from `data_fold/snp/snp_filter.tsv`."
+        "-S", type=str, required=True, dest="snp_load_path",
+        help="Path to the SNPs file that contain genetic variation."
     )
     parser.add_argument(
         "-C", type=str, required=False, dest="csv_save_fold", default=None,
@@ -54,8 +52,6 @@ def getArgs():
 
     # set default value
     data_fold = os.path.dirname(os.path.dirname(args.bam_load_path))
-    if args.snp_load_path is None:
-        args.snp_load_path = os.path.join(data_fold, "snp", "snp_filter.tsv")
     if args.csv_save_fold is None:
         csv_fold = os.path.join(data_fold, "csv")
         id = os.path.basename(args.bam_load_path).split(".")[0]
