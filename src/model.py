@@ -3,14 +3,12 @@ import torch.nn as nn
 from torch import Tensor
 import transformers
 
-from typing import List
-
 __all__ = ["DNABERT2FC"]
 
 
 class DNABERT2FC(nn.Module):
     def __init__(
-        self, feats_coord: List[int], feats_final: List[int], **kwargs
+        self, feats_coord: list[int], feats_final: list[int], **kwargs
     ) -> None:
         super(DNABERT2FC, self).__init__()
         self.feats_coord = feats_coord
@@ -39,7 +37,7 @@ class DNABERT2FC(nn.Module):
 
 
 class FC(nn.Module):
-    def __init__(self, feats: List[int], **kwargs) -> None:
+    def __init__(self, feats: list[int], **kwargs) -> None:
         super(FC, self).__init__()
         self.layers = nn.ModuleList([
             nn.Sequential(

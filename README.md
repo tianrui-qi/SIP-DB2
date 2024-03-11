@@ -1,6 +1,26 @@
 # TCGA-Onc
 
-## Data
+## Environment
+
+The code is tested with `Python=3.9`, `PyTorch=2.2`, and `CUDA=12.1`. We 
+recommend you to use [Miniconda](https://docs.conda.io/en/latest/miniconda.html)
+or [Anaconda](https://www.anaconda.com/) to make sure that all dependencies are 
+in place. To create an conda environment:
+```bash
+# clone the repository
+git clone git@github.com:tianrui-qi/TCGA-Onc.git
+cd TCGA-Onc
+# create the conda environment
+conda env create -f environment.yml
+conda activate TCGA-Onc
+# install pytorch depend by device
+conda install pytorch pytorch-cuda=12.1 -c pytorch -c nvidia    # gpu
+conda install pytorch cpuonly -c pytorch                        # cpu
+# install transformers
+conda install transformers==4.29.2 -c conda-forge
+# uninstall triton to solve environment problem
+pip uninstall triton
+```
 
 ## Data Structure
 

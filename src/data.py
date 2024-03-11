@@ -7,7 +7,6 @@ import pandas as pd
 import os
 import pysam
 import random
-from typing import List, Tuple
 
 __all__ = ["DNADataset"]
 
@@ -16,7 +15,7 @@ class DNADataset(torch.utils.data.Dataset):
     def __init__(
         self, num: int,
         snp_load_path: str, bam_load_fold: str, 
-        sample_list: List[Tuple[str, int]], 
+        sample_list: list[tuple[str, int]], 
         pval_threshold: float, pos_range: int, 
         quality_threshold: float, length_threshold: int,
         **kwargs
@@ -42,7 +41,7 @@ class DNADataset(torch.utils.data.Dataset):
         self.coord_list = []        # [chromosome, position] of reads
         self.label_list = []        # reads from pre or post anti-PD-1 sample
 
-    def __getitem__(self, index) -> Tuple[str, Tensor, Tensor]:
+    def __getitem__(self, index) -> tuple[str, Tensor, Tensor]:
         while len(self.sequence_list) == 0:
             # random choose a sample
             id, label = random.choice(self.sample_list)

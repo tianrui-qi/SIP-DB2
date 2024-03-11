@@ -2,13 +2,9 @@ import numpy as np
 import pandas as pd
 
 import os
-import sys
+import tqdm
 import pysam
 import argparse
-if 'ipykernel' in sys.modules:
-    import tqdm.notebook as tqdm
-else:
-    import tqdm
 
 __all__ = []
 
