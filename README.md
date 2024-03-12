@@ -11,14 +11,10 @@ in place. To create an conda environment:
 git clone git@github.com:tianrui-qi/TCGA-Onc.git
 cd TCGA-Onc
 # create the conda environment
-conda env create -f environment.yml
+conda env create -f environment-cpu.yml     # cpu env
+conda env create -f environment-gpu.yml     # gpu env
 conda activate TCGA-Onc
-# install pytorch depend by device
-conda install pytorch pytorch-cuda=12.1 -c pytorch -c nvidia    # gpu
-conda install pytorch cpuonly -c pytorch                        # cpu
-# install transformers
-conda install transformers==4.29.2 -c conda-forge
-# uninstall triton to solve environment problem
+# uninstall triton to solve env problem
 pip uninstall triton
 ```
 

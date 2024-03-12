@@ -11,6 +11,7 @@ import tqdm
 
 import src.data, src.model
 
+
 __all__ = ["Trainer"]
 
 
@@ -45,7 +46,7 @@ class Trainer:
         self.scaler    = torch.cuda.amp.GradScaler()
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
         self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-            self.optimizer, T_max=T_max
+            self.optimizer, T_max=T_max, eta_min=1e-10
         )
         # recorder
         self.writer = writer.SummaryWriter()
