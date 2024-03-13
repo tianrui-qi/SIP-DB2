@@ -30,10 +30,9 @@ def getArgs():
         help="Go through each chromosome's reads in BAM file and calculate " + 
         "num of variants in each read with different p-value threshold. Then " +
         "save each chromosome as seperate CSV file with header: " +
-        "`sequence`, `pos`, `1e-0`, `1e-1`, `1e-2`, `1e-3`, and `1e-4`. " + 
-        "We only consider p-value to 1e-4 since the order of magnitude of" +
-        "number of variants does not change a lots after. Default: " +
-        "assume `bam_load_path` has a structure of `data_fold/bam/id.bam`, " +
+        "`sequence`, `pos`, and string of p-value threshold `1e-0`, `1e-1`, " +
+        "`1e-2`, `1e-3`, `1e-4`, `1e-5`, and `1e-6`. Default: assume " + 
+        "`bam_load_path` has a structure of `data_fold/bam/id.bam`, " + 
         "save csv to `data_fold/csv/id/chr.csv` where chr is 1-22 and X."
     )
     parser.add_argument(
@@ -60,7 +59,7 @@ def bam2csv(
     bam_load_path: str, snp_load_path: str, csv_save_fold: str,
     quality_thresh: int = 16, length_thresh: int = 96,
 ) -> None:
-    pval_thresh_list = [1e-0, 1e-1, 1e-2, 1e-3, 1e-4, ]
+    pval_thresh_list = [1e-0, 1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6]
     chr_list = [str(i) for i in range(1, 23)] + ["X"]   # BAM naming convention
 
     snp_dict = {}
@@ -89,7 +88,7 @@ def bam2csv(
         if os.path.exists(csv_save_path): continue
 
         # dataframe with column "sequence", "pos", 
-        # str(1e-0), str(1e-1), str(1e-2), str(1e-3), str(1e-4)
+        # "1", "0.1", "0.01", "0.001", "0.0001", "1e-05", "1e-06"
         read_dict = {key: [] for key in ["sequence", "pos"] + pval_thresh_list}
         for read in tqdm.tqdm(
             pysam.AlignmentFile(bam_load_path, "rb").fetch(chr), 

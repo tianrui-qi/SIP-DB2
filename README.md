@@ -194,23 +194,22 @@ different p-value threshold (<=) of variants. For example, (Chr 1, 1e-1) is
 | 1e-8 |      11,087 | 555       | 1,732     | 373       | 3         | 202       | 3,866     | 214       | 447       | 668       | 196       | 495       | 297       | 23        | 47        | 93        | 522       | 7         | 0         | 27        | 1,271     | 44        | 0         | 5         |
 | 1e-9 |       9,128 | 503       | 1,270     | 338       | 0         | 147       | 3,426     | 193       | 387       | 507       | 161       | 345       | 276       | 3         | 38        | 89        | 425       | 6         | 0         | 10        | 961       | 40        | 0         | 3         |
 
-## Filter Reads (BAM & SNPs -> CSV)
+## Filter Reads (BAM & SNPs -> CSV) TODO: update readme
 
 For each read, filter the read that is not paired, not properly paired, and not 
 mapped. Then, cut bases with quality less than `quality_thresh=16` at beginning 
 and end of reads and short reads with length less than `length_thresh=96`. Then,
 calculate the number of variant (bp) in each read with different p-value 
 threshold (<=) and store each sample `$id` and chromosome `$chr` result in 
-`data/public/csv/$id/$chr.csv` as dataframe with columns `sequence`, `pos`, 
-`1e-0`, `1e-1`, `1e-2`, `1e-3`, and `1e-4`. We only consider p-value to `1e-4` 
-since the order of magnitude of variants number does not change a lots after. 
-For downstream analysis, we load the CSV file instead of BAM since BAM is hard 
-to random index; we can only go through the whole BAM to filter reads, which 
-is time-consuming.
+`data/public/csv/$id/$chr.csv` as dataframe with columns `sequence`, `pos`, and
+string of p-value threshold `1e-0`, `1e-1`, `1e-2`, `1e-3`, `1e-4`, `1e-5`, and
+`1e-6`. For downstream analysis, we load the CSV file instead of BAM since BAM 
+is hard to random index; we can only go through the whole BAM to filter reads, 
+which is time-consuming.
 
 Please refer to [util/bam2csv.py](util/bam2csv.py) for the implementation or
 type `python util/bam2csv.py -h` to see the usage and options. **The algorithm 
-can process 45000 reads per second, 1 hour for one sample, and need about 40GB 
+can process 39000 reads per second, 1 hour for one sample, and need about 40GB 
 memory.** It's not optimized for parallel computing; you can open multiple 
 terminals to process samples at the same time if your have enough memory.
 ```bash
@@ -237,13 +236,13 @@ csv = pd.read_csv("data/public/csv/SRR8924580/1.csv")
 csv = csv[csv[str(1e-4)]>=1]
 print(csv.head())
 ```
-|       |                                          sequence |    pos | 1.0 | 0.1 | 0.01 | 0.001 | 0.0001 |
-|------:|:--------------------------------------------------|-------:|-----|-----|------|-------|--------|
-| 29079 | CAACCAGGAAGCAAGTGTGGAGCTGGGAGTGAGGGAGCTGGGTGTG... | 834338 | 4.0 | 2.0 |  1.0 |   1.0 |    1.0 | 
-| 29080 | GCAAGTGTGGAGCTGGGAGTGAGGGAGCTGGGTGTGGAGATCAGGG... | 834348 | 4.0 | 2.0 |  1.0 |   1.0 |    1.0 |
-| 29409 | CTGGGACTTTTTTCCTCTGAATTCAAAGGTGGGGCAGTCTAGGCAC... | 843084 | 5.0 | 1.0 |  1.0 |   1.0 |    1.0 | 
-| 29410 | GTGCGATTAGACAGTTACTATCTTTCCCTGGTTGACGGATTAGAGT... | 843184 | 2.0 | 1.0 |  1.0 |   1.0 |    1.0 | 
-| 29417 | TCAAGCAGGAAGCTGGGTCTGCGGGGAGTAGGGTGGGGCTGGTTCT... | 844593 | 1.0 | 1.0 |  1.0 |   1.0 |    1.0 | 
+|       |                                          sequence |    pos | 1.0 | 0.1 | 0.01 | 0.001 | 0.0001 | 1e-05 | 1e-06 | 
+|------:|:--------------------------------------------------|-------:|-----|-----|------|-------|--------|-------|-------|
+| 29079 | CAACCAGGAAGCAAGTGTGGAGCTGGGAGTGAGGGAGCTGGGTGTG... | 834338 | 4.0 | 2.0 |  1.0 |   1.0 |    1.0 |   0.0 |   0.0 |
+| 29080 | GCAAGTGTGGAGCTGGGAGTGAGGGAGCTGGGTGTGGAGATCAGGG... | 834348 | 4.0 | 2.0 |  1.0 |   1.0 |    1.0 |   0.0 |   0.0 |
+| 29409 | CTGGGACTTTTTTCCTCTGAATTCAAAGGTGGGGCAGTCTAGGCAC... | 843084 | 5.0 | 1.0 |  1.0 |   1.0 |    1.0 |   0.0 |   0.0 |
+| 29410 | GTGCGATTAGACAGTTACTATCTTTCCCTGGTTGACGGATTAGAGT... | 843184 | 2.0 | 1.0 |  1.0 |   1.0 |    1.0 |   0.0 |   0.0 |
+| 29417 | TCAAGCAGGAAGCTGGGTCTGCGGGGAGTAGGGTGGGGCTGGTTCT... | 844593 | 1.0 | 1.0 |  1.0 |   1.0 |    1.0 |   0.0 |   0.0 |
 
 Table below shows number of reads of sample `SRR8924580` in total and in
 each chromosome, without and with filter that reads must cover at least one 
@@ -258,3 +257,5 @@ that the read cover at least one variant with p-value <= 1e-1.
 | 1e-2 |   9,725,650 |    940,798 |    715,400 |   564,492 |   390,025 |   432,284 |   639,812 |   521,963 |   348,444 |   376,853 |   383,790 |   591,782 |   485,884 |   194,712 |   290,159 |   326,829 |   458,602 |   510,413 |   160,848 |   577,993 |   269,082 |   117,585 |   214,822 |   213,078 | 
 | 1e-3 |   1,551,467 |    145,637 |    104,460 |    82,218 |    50,757 |    68,948 |   172,333 |    80,412 |    53,079 |    58,717 |    52,065 |    92,928 |    73,323 |    24,626 |    40,266 |    53,299 |    81,031 |    84,970 |    19,102 |    76,293 |    65,186 |    14,727 |    29,638 |    27,452 | 
 | 1e-4 |     410,116 |     35,104 |     31,473 |    20,573 |     6,578 |    15,055 |    84,579 |    17,675 |    12,201 |    14,893 |     6,144 |    28,216 |    17,937 |     3,527 |     6,842 |    11,993 |    25,468 |    11,219 |     2,497 |    16,287 |    30,596 |     1,617 |     3,339 |     6,303 | 
+| 1e-5 |     194,965 |     13,372 |     16,246 |     5,129 |       235 |     7,036 |    51,043 |     7,049 |     5,538 |     7,957 |     2,261 |    14,068 |    11,030 |       885 |     1,611 |     3,361 |    16,204 |     4,399 |        56 |     3,955 |    20,721 |       238 |       825 |     1,746 |
+| 1e-6 |     133,805 |      9,138 |     12,461 |     2,488 |        30 |     4,712 |    35,877 |     4,114 |     3,413 |     5,797 |     1,212 |    10,141 |     9,728 |       579 |       235 |     1,269 |    11,894 |     1,644 |         1 |     1,778 |    16,553 |       122 |         0 |       619 |
