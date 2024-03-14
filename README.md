@@ -1,5 +1,16 @@
 # TCGA-Onc
 
+## TODO
+
+-   Train a universal UMAP for DNABERT2 (and DNABERT2FC). Set a p-value like
+    1e-2 to filter some reads since we no longer need them and random choose
+    read from each sample from all chromosome. 
+-   Save the umap embedding of chromosome 6 for all sample and store into csv by
+    sample and chromosome with column `umap1`, `umap2`, `pos`.
+-   Do statistical analysis including correlation (23 * 23), 2d density plot for
+    each sample. Settle down chromosome 6 and a p-value first.
+-   Powerpoint for presentation.
+
 ## Environment
 
 The code is tested with `Python=3.9`, `PyTorch=2.2`, and `CUDA=12.1`. We 
@@ -18,50 +29,92 @@ conda activate TCGA-Onc
 pip uninstall triton
 ```
 
-## Data Structure
+## Stanford Data
+
+Root of path is omitted for simplicity; we assume root for data is in data 
+folder (check [Data Structure](#data-structure) for details) and for script is 
+in project folder. Please change the path accordingly.
+
+### Data Structure
 
 ```bash
-TACG-Onc/data/
+/mnt/efs_v2/tag_onc/users/tianrui.qi/TCGA-Onc/data/stanford/
+├── bam                         # sorted aligned reads by Samtools
+│   ├── SRR8924580.bam              # sorted bam file
+│   ├── SRR8924580.bam.bai          # corresponding index
+│   └── ...
 ├── bwa-mem2-2.2.1_x64-linux    # bwa-mem2, software for alignment
-├── public                      # public data from Stanford, 23 samples
-│   ├── bam                         # sorted aligned reads by Samtools
-│   │   ├── SRR8924580.bam              # sorted bam file
-│   │   ├── SRR8924580.bam.bai          # corresponding index
-│   │   └── ...
-│   ├── csv                         # reads' variant num with diff p-val thresh
-│   │   ├── SRR8924580                  # sample id
-│   │   │   ├──  1.csv                      # chromosome 1
-│   │   │   ├── ...
-│   │   │   ├── 22.csv
-│   │   │   └──  X.csv
-│   │   └── ...
-│   ├── fastq                       # unaligned reads
-│   │   ├── SRR8924580                  # sample id
-│   │   │   ├── *R1.fastq.gz                # read 1
-│   │   │   └── *R2.fastq.gz                # read 2
-│   │   └── ...
-│   ├── sam                         # aligned reads by bwa-mem2
-│   │   ├── SRR8924580.sam
-│   │   └── ...
-│   └── profile.txt
+├── csv                         # reads' variant num with diff p-val thresh
+│   ├── SRR8924580                  # sample id
+│   │   ├──  1.csv                      # chromosome 1
+│   │   ├── ...
+│   │   ├── 22.csv
+│   │   └──  X.csv
+│   └── ...
+├── fastq                       # unaligned reads
+│   ├── SRR8924580                  # sample id
+│   │   ├── *R1.fastq.gz                # read 1
+│   │   └── *R2.fastq.gz                # read 2
+│   └── ...
 ├── ref                         # reference for alignment
 │   └── ref.fa                      # reference genome
 │   └── ...                         # corresponding index
+├── sam                         # aligned reads by bwa-mem2
+│   ├── SRR8924580.sam
+│   └── ...
 ├── snp                         # genetic variation
 │   ├── snp.tsv                     # raw SNPs
 │   └── snp_filter.tsv              # only keep col `Chr`, `Pos`, `Pval`
+└── profile.txt
+
+/mnt/efs_v2/dbgap_tcga/users/tianrui.qi/TCGA-Onc/data/stanford/
+└── ...
+``` 
+
+### Profile
+
+We mainly focus on the Run, Isolate, Treatment when processing. To use the
+profile, 
+```python
+profile = pd.read_csv("profile.txt")
+# Isolate   string (su001, ...) -> int (1, ...)
+profile["Isolate"] = profile["Isolate"].apply(lambda x: int(x[2:]))
+# Treatment string (pre/post)   -> int (0/1)
+profile["Treatment"] = profile["Treatment"].apply(lambda x: int(not "pre" in x))
 ```
 
-## Preprocessing Pipeline
-
-We use publice dataset from Stanford University as example. 
+| Run           | Isolate   | Treatment         | Tissue        | Bases     | Reads     |
+|---------------|-----------|-------------------|---------------|-----------|-----------|
+| SRR8924593    | su001     | pre anti-PD-1     | BCC tumor     | 1.49E+10  | 1.20E+08  |
+| SRR8924591    | su001     | pre anti-PD-1     | normal skin   | 1.16E+10  | 9.34E+07  |
+| SRR8924590    | su001     | post anti-PD-1    | BCC tumor     | 2.00E+10  | 1.61E+08  |
+| SRR8924594    | su002     | pre anti-PD-1     | BCC tumor     | 1.43E+10  | 1.15E+08  |
+| SRR8924595    | su002     | post anti-PD-1    | BCC tumor     | 1.59E+10  | 1.29E+08  |
+| SRR8924592    | su002     | post anti-PD-1    | normal skin   | 1.45E+10  | 1.17E+08  |
+| SRR8924599    | su003     | pre anti-PD-1     | BCC tumor     | 1.58E+10  | 1.28E+08  |
+| SRR8924597    | su003     | pre anti-PD-1     | normal skin   | 1.53E+10  | 1.24E+08  |
+| SRR8924596    | su003     | post anti-PD-1    | BCC tumor     | 1.08E+10  | 8.71E+07  |
+| SRR8924585    | su004     | pre anti-PD-1     | BCC tumor     | 1.42E+10  | 1.14E+08  |
+| SRR8924598    | su004     | pre anti-PD-1     | normal skin   | 1.37E+10  | 1.11E+08  |
+| SRR8924582    | su005     | pre anti-PD-1     | BCC tumor     | 1.59E+10  | 1.28E+08  |
+| SRR8924583    | su005     | post anti-PD-1    | BCC tumor     | 1.42E+10  | 1.15E+08  |
+| SRR8924584    | su005     | post anti-PD-1    | normal skin   | 1.41E+10  | 1.13E+08  |
+| SRR8924587    | su006     | pre anti-PD-1     | BCC tumor     | 1.42E+10  | 1.14E+08  |
+| SRR8924589    | su006     | pre anti-PD-1     | normal skin   | 1.43E+10  | 1.15E+08  |
+| SRR8924588    | su006     | post anti-PD-1    | BCC tumor     | 1.51E+10  | 1.22E+08  |
+| SRR8924580    | su007     | pre anti-PD-1     | BCC tumor     | 1.90E+10  | 1.54E+08  |
+| SRR8924586    | su007     | pre anti-PD-1     | normal skin   | 2.08E+10  | 1.68E+08  |
+| SRR8924581    | su007     | post anti-PD-1    | BCC tumor     | 1.92E+10  | 1.54E+08  |
+| SRR8924600    | su008     | post anti-PD-1    | BCC tumor     | 1.40E+10  | 1.13E+08  |
+| SRR8924602    | su008     | post anti-PD-1    | BCC tumor     | 1.35E+10  | 1.09E+08  |
+| SRR8924601    | su008     | post anti-PD-1    | normal skin   | 1.30E+10  | 1.05E+08  |
 
 ### Unaligned Reads (FASTQ)
 
-Raw FASTQ data address is `data/public/fastq/`, contain 23 samples, copy from 
+Raw FASTQ store in `fastq/`, contain 23 samples, copy from 
 `/mnt/s3/rgc-tag-onc-jh1-resources/2019_natBiotech_anneChang_bccWXS/fastq/`.
 For each sample, we have two reads, i.e., `*R1.fastq.gz` and `*R2.fastq.gz`. 
-The profile of these data can be find in `data/public/profile.txt`, copy from 
+The profile of these data can be find in `profile.txt`, copy from 
 `/mnt/s3/rgc-tag-onc-jh1-resources/2019_natBiotech_anneChang_bccWXS/SraRunTable_PRJNA533341_2018_bccWXS.txt`.
 
 To mount the S3 bucket `rgc-tag-onc-jh1-resources` (like HDD/SSD in desktop) of 
@@ -78,40 +131,36 @@ Type `df -h` to check if the filesystem is mounted where `-h` means human readab
 
 ### Alignment (FASTQ -> SAM)
 
-We use [bwa-mem2](https://github.com/bwa-mem2/bwa-mem2) to align the FASTQ file.
-To install it,
+Use [bwa-mem2](https://github.com/bwa-mem2/bwa-mem2) to align the FASTQ. To 
+install it,
 ```bash
 # intall bwa-mem2
-cd data
 curl -L https://github.com/bwa-mem2/bwa-mem2/releases/download/v2.2.1/bwa-mem2-2.2.1_x64-linux.tar.bz2 | tar jxf -
-cd ..
 # index the reference genome
-data/bwa-mem2-2.2.1_x64-linux/bwa-mem2 index data/ref/ref.fa
+bwa-mem2-2.2.1_x64-linux/bwa-mem2 index ref/ref.fa
 ```
-where the reference genome `data/ref/ref.fa` copy from 
+where the reference genome `ref/ref.fa` copy from 
 `/mnt/efs_v2/tag_onc/users/hossein.khiabanian/ref/genome.fa`
 
-Then, we run alignment and store result of each sample in 
-`data/public/sam/*.sam`:
+Then, we run alignment and store result of each sample in `sam/*.sam`:
 ```bash
 # usage
-data/bwa-mem2-2.2.1_x64-linux/bwa-mem2 mem -t <num_threads> data/ref/ref.fa data/public/fastq/<id>/*R1.fastq.gz data/public/fastq/<id>/*R2.fastq.gz > data/public/sam/<id>.sam
+bwa-mem2-2.2.1_x64-linux/bwa-mem2 mem -t <num_threads> ref/ref.fa fastq/<id>/*R1.fastq.gz fastq/<id>/*R2.fastq.gz > sam/<id>.sam
 
 # e.g., sample `SRR8924580`, powershell
 $id = "SRR8924580";
-data/bwa-mem2-2.2.1_x64-linux/bwa-mem2 mem -t 40 data/ref/ref.fa data/public/fastq/$id/*R1.fastq.gz data/public/fastq/$id/*R2.fastq.gz > data/public/sam/$id.sam;
+bwa-mem2-2.2.1_x64-linux/bwa-mem2 mem -t 40 ref/ref.fa fastq/$id/*R1.fastq.gz fastq/$id/*R2.fastq.gz > sam/$id.sam;
 
 # e.g., sample `SRR8924580` to `SRR8924602`, powershell
 foreach ($i in 580..602) { 
     $id = "SRR8924$i"; 
-    data/bwa-mem2-2.2.1_x64-linux/bwa-mem2 mem -t 40 data/ref/ref.fa data/public/fastq/$id/*R1.fastq.gz data/public/fastq/$id/*R2.fastq.gz > data/public/sam/$id.sam; 
+    bwa-mem2-2.2.1_x64-linux/bwa-mem2 mem -t 40 ref/ref.fa fastq/$id/*R1.fastq.gz fastq/$id/*R2.fastq.gz > sam/$id.sam; 
 }
 ```
 
 ### Convert and Sort (SAM -> BAM)
 
-We need to convert the `.sam` file above into `.bam` file using [Samtools](https://www.htslib.org). 
-To install it,
+We convert SAM into BAM using [Samtools](https://www.htslib.org). To install it,
 ```bash
 # download source file
 wget https://github.com/samtools/samtools/releases/download/1.19.2/samtools-1.19.2.tar.bz2
@@ -130,50 +179,50 @@ rm -rf samtools-1.19.2
 rm samtools-1.19.2.tar.bz2
 ```
 
-Then, to convert `.sam` file into `.bam` file,
+Then, convert SAM into BAM file,
 ```bash
 # usage
 ## convert SAM file to BAM file
-samtools view -@ <num_threads> -S -b data/public/sam/<id>.sam > data/public/bam/<id>.bam
+samtools view -@ <num_threads> -S -b sam/<id>.sam > bam/<id>.bam
 ## sort the BAM file
-samtools sort -@ <num_threads> data/public/bam/<id>.bam -o data/public/bam/<id>.bam
+samtools sort -@ <num_threads> bam/<id>.bam -o bam/<id>.bam
 ## index the sorted BAM file
-samtools index -@ <num_threads> data/public/bam/<id>.bam
+samtools index -@ <num_threads> bam/<id>.bam
 
 # e.g., sample `SRR8924580`, powershell
 $id = "SRR8924580";
-samtools view -@ 40 -S -b data/public/sam/$id.sam > data/public/bam/$id.bam;
-samtools sort -@ 40 data/public/bam/$id.bam -o data/public/bam/$id.bam;
-samtools index -@ 40 data/public/bam/$id.bam;
+samtools view -@ 40 -S -b sam/$id.sam > bam/$id.bam;
+samtools sort -@ 40 bam/$id.bam -o bam/$id.bam;
+samtools index -@ 40 bam/$id.bam;
 
 # e.g., sample `SRR8924580` to `SRR8924602`, powershell
 foreach ($i in 580..602) { 
     $id = "SRR8924$i"; 
-    samtools view -@ 40 -S -b data/public/sam/$id.sam > data/public/bam/$id.bam;
-    samtools sort -@ 40 data/public/bam/$id.bam -o data/public/bam/$id.bam;
-    samtools index -@ 40 data/public/bam/$id.bam;
+    samtools view -@ 40 -S -b sam/$id.sam > bam/$id.bam;
+    samtools sort -@ 40 bam/$id.bam -o bam/$id.bam;
+    samtools index -@ 40 bam/$id.bam;
 }
 ```
-We can then use [pysam](https://pysam.readthedocs.io/en/stable/#) to read the 
-`.bam` file and extract the reads.
+We can then use [pysam](https://pysam.readthedocs.io/en/stable/#) to read BAM 
+and extract the reads.
 
 ### Genomic Variant (SNPs)
 
 SNPs define genomic variant at a single base position in the DNA sequence, from
-Chr 1 to 22 and X. Original SNPs file store in `data/snp/snp.tsv`, copy from 
+Chr 1 to 22 and X. Original SNPs file store in `snp/snp.tsv`, copy from 
 `/mnt/s3/rgc-ag-data/app_data/yoga/Prod/gwas/817718/Meta.BCConly.COLORADO_Freeze_One__MAYO-CLINIC_Freeze_Two__SINAI_Freeze_Two__UCLA_Freeze_One__UKB_Freeze_450__UPENN-PMBB_Freeze_Two.EUR.Meta_Combined.tsv.gz`. 
 It takes minutes to load whole file; so, we only keep `Chr`, `Pos`, and `Pval` 
-columns and store the filtered SNPs at `data/snp/snp_filter.tsv`, which reduce
+columns and store the filtered SNPs at `snp/snp_filter.tsv`, which reduce
 loading time to 10 seconds.
 ```python
 import pandas as pd
-snp = pd.read_csv("data/snp/snp.tsv", usecols=["Chr", "Pos", "Pval"], sep="\t")
-snp.to_csv("data/snp/snp_filter.tsv", sep="\t", index=False)
+snp = pd.read_csv("snp/snp.tsv", usecols=["Chr", "Pos", "Pval"], sep="\t")
+snp.to_csv("snp/snp_filter.tsv", sep="\t", index=False)
 ```
 Then, to load the filtered SNPs,
 ```python
 import pandas as pd
-snp = pd.read_csv("data/snp/snp_filter.tsv", sep="\t")
+snp = pd.read_csv("snp/snp_filter.tsv", sep="\t")
 ```
 
 We can reduce the number of variant by setting a p-value threshold. Table below
@@ -194,44 +243,43 @@ different p-value threshold (<=) of variants. For example, (Chr 1, 1e-1) is
 | 1e-8 |      11,087 | 555       | 1,732     | 373       | 3         | 202       | 3,866     | 214       | 447       | 668       | 196       | 495       | 297       | 23        | 47        | 93        | 522       | 7         | 0         | 27        | 1,271     | 44        | 0         | 5         |
 | 1e-9 |       9,128 | 503       | 1,270     | 338       | 0         | 147       | 3,426     | 193       | 387       | 507       | 161       | 345       | 276       | 3         | 38        | 89        | 425       | 6         | 0         | 10        | 961       | 40        | 0         | 3         |
 
-## Filter Reads (BAM & SNPs -> CSV) TODO: update readme
+### Filter Reads (BAM & SNPs -> CSV)
 
 For each read, filter the read that is not paired, not properly paired, and not 
 mapped. Then, cut bases with quality less than `quality_thresh=16` at beginning 
 and end of reads and short reads with length less than `length_thresh=96`. Then,
 calculate the number of variant (bp) in each read with different p-value 
 threshold (<=) and store each sample `$id` and chromosome `$chr` result in 
-`data/public/csv/$id/$chr.csv` as dataframe with columns `sequence`, `pos`, and
-string of p-value threshold `1e-0`, `1e-1`, `1e-2`, `1e-3`, `1e-4`, `1e-5`, and
-`1e-6`. For downstream analysis, we load the CSV file instead of BAM since BAM 
-is hard to random index; we can only go through the whole BAM to filter reads, 
-which is time-consuming.
+`csv/$id/$chr.csv` as dataframe with columns `sequence`, `pos`, and string of 
+p-value threshold from `1e-0` to `1e-6`. For downstream analysis, load the CSV 
+instead of BAM since BAM is hard to random index; we can only go through the 
+whole BAM to filter reads, which is time-consuming.
 
-Please refer to [util/bam2csv.py](util/bam2csv.py) for the implementation or
-type `python util/bam2csv.py -h` to see the usage and options. **The algorithm 
-can process 39000 reads per second, 1 hour for one sample, and need about 40GB 
-memory.** It's not optimized for parallel computing; you can open multiple 
-terminals to process samples at the same time if your have enough memory.
+Please refer to script [util/bam2csv.py](util/bam2csv.py) for the implementation
+or type `python util/bam2csv.py -h` to see the usage and options. The algorithm 
+can process 39000 reads per second, 1 hour for one sample, and need about 45GB 
+memory. It's not optimized for parallel computing; open multiple terminals to 
+process samples at the same time if memory is enough.
 ```bash
 # usage
-python util/bam2csv.py -B data/public/bam/<id>.bam -S data/snp/snp_filter.tsv [-C data/public/csv/<id>/] [-q 16] [-l 96]
+python util/bam2csv.py -B bam/<id>.bam -S snp/snp_filter.tsv [-C csv/<id>/] [-q 16] [-l 96]
 
 # e.g., sample `SRR8924580`, powershell
 $id = "SRR8924580"; 
-python util/bam2csv.py -B data/public/bam/$id.bam -S data/snp/snp_filter.tsv;
+python util/bam2csv.py -B bam/$id.bam -S snp/snp_filter.tsv;
 
 # e.g., sample `SRR8924580` to `SRR8924602`, powershell
 foreach ($i in 580..602) { 
     $id = "SRR8924$i"; 
-    python util/bam2csv.py -B data/public/bam/$id.bam -S data/snp/snp_filter.tsv;
+    python util/bam2csv.py -B bam/$id.bam -S snp/snp_filter.tsv;
 }
 # for 3 process parallel, change each for loop to 580..587, 588..595, 596..602
 ```
-Then, to use the `.csv`,
+Then, to use the CSV,
 ```python
 import pandas as pd
 # sample id SRR8924580, chromosome 1
-csv = pd.read_csv("data/public/csv/SRR8924580/1.csv")
+csv = pd.read_csv("csv/SRR8924580/1.csv")
 # filter reads that cover at least one variants with p-value<=1e-4
 csv = csv[csv[str(1e-4)]>=1]
 print(csv.head())
@@ -259,3 +307,7 @@ that the read cover at least one variant with p-value <= 1e-1.
 | 1e-4 |     410,116 |     35,104 |     31,473 |    20,573 |     6,578 |    15,055 |    84,579 |    17,675 |    12,201 |    14,893 |     6,144 |    28,216 |    17,937 |     3,527 |     6,842 |    11,993 |    25,468 |    11,219 |     2,497 |    16,287 |    30,596 |     1,617 |     3,339 |     6,303 | 
 | 1e-5 |     194,965 |     13,372 |     16,246 |     5,129 |       235 |     7,036 |    51,043 |     7,049 |     5,538 |     7,957 |     2,261 |    14,068 |    11,030 |       885 |     1,611 |     3,361 |    16,204 |     4,399 |        56 |     3,955 |    20,721 |       238 |       825 |     1,746 |
 | 1e-6 |     133,805 |      9,138 |     12,461 |     2,488 |        30 |     4,712 |    35,877 |     4,114 |     3,413 |     5,797 |     1,212 |    10,141 |     9,728 |       579 |       235 |     1,269 |    11,894 |     1,644 |         1 |     1,778 |    16,553 |       122 |         0 |       619 |
+
+## Method
+
+### UMAP
