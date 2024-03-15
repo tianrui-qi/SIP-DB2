@@ -54,15 +54,10 @@ class DNADataset(torch.utils.data.Dataset):
             chr_bp, pos_bp = self.snp.iloc[
                 random.randint(0, len(self.snp)-1)
             ].values
-            chr_list = [
-                 '1',  '2',  '3',  '4',  '5',  '6',  '7',  '8',  '9', '10', 
-                '11', '12', '13', '14', '15', '16', '17', '18', '19', '20', 
-                '21', '22', 'X'
-            ]
 
             # fetch all read near the bp
             for read in samfile.fetch(
-                contig=chr_list[chr_bp-1], 
+                contig=str(chr_bp) if chr_bp != 23 else 'X', 
                 start=pos_bp-self.pos_range, end=pos_bp+self.pos_range
             ):
                 pos = read.reference_start
@@ -103,8 +98,8 @@ class DNADataset(torch.utils.data.Dataset):
         coord = torch.as_tensor(coord, dtype=torch.float32)
         label = torch.as_tensor(label, dtype=torch.float32)
         # normalize
-        coord[0] /= 22      # 23 chromosomes, 0-based
-        coord[1] /= 2.5e8   # 2.5e8 bp in human genome
+        coord[0] = (coord[0]-1) / 22    # 23 chromosomes, 1-based
+        coord[1] = coord[1] / 2.5e8     # 2.5e8 bp in human genome
 
         return sequence, coord, label
 

@@ -23,7 +23,9 @@ class DNABERT2FC(nn.Module):
         # final classification/regression
         self.fc_final = FC(feats_final)
 
-    def forward(self, token: Tensor, coord: Tensor) -> Tensor:
+    def forward(
+        self, token: Tensor, coord: Tensor = None, mode: str = None
+    ) -> Tensor:
         # token embedding by DNABERT2
         hidden_states = self.dnabert2(token)    # ( [B, N, 768], [B, 768] )
         # embedding with mean or max pooling
@@ -31,10 +33,15 @@ class DNABERT2FC(nn.Module):
         # max_embedding  = torch.max(hidden_states[0], dim=1)[0]    # [B, 768]
         token_embedding = torch.mean(hidden_states[0], dim=1)       # [B, 768]
 
+        if coord == None: return token_embedding
+        if mode == "token_embedding": return token_embedding
+
         # coord embedding
         coord_embedding = self.fc_coord(coord)
 
-        return self.fc_final(token_embedding + coord_embedding)
+        self.fc_final(token_embedding + coord_embedding)
+        if mode == "embedding": return token_embedding + coord_embedding
+        if mode == "coord_embedding": return coord_embedding
 
 
 class FC(nn.Module):

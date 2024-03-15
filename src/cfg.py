@@ -17,7 +17,7 @@ class Config:
                 ("SRR8924592", 1),  # normal skin   post anti-PD-1
             ],
             # filter
-            "pval_threshold": 1e-2,
+            "pval_threshold": 1e-3,
             "pos_range": 64,    # since averge read length is 124
             "quality_threshold": 16,
             "length_threshold" : 96,
@@ -40,5 +40,5 @@ class Config:
             "num_workers": 8,
             # optimizer
             "lr": 5e-4,
-            "T_max": 20,    # for CosineAnnealingLR
+            "T_max": 15,    # for CosineAnnealingLR
         }
