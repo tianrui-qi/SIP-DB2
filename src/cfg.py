@@ -8,7 +8,7 @@ class Config:
             "num": 64 * 16 * 1000,
             # path
             "snp_load_path": data_fold + "snp/snp_filter.tsv",
-            "bam_load_fold": data_fold + "public/bam/",
+            "bam_load_fold": data_fold + "bam/",
             # sample
             "sample_list": [    # list of sample (id, label)
                 ("SRR8924593", 0),  # BCC tumor     pre  anti-PD-1
@@ -32,7 +32,7 @@ class Config:
             "max_epoch": 800, 
             "accumu_steps": 16, 
             # checkpoint
-            "ckpt_save_fold": "ckpt/" + self.__class__.__name__,
+            "ckpt_save_fold": "ckpt/dnabert2fc/",
             "ckpt_load_path": "",       # path without .ckpt
             "ckpt_load_lr"  : False,    # load lr from ckpt
             # data
