@@ -42,6 +42,8 @@ class Trainer:
         )
         # model
         self.model = model.to(self.device)
+        for param in self.model.dnabert2.parameters():
+            param.requires_grad = False
         # optimizer
         self.scaler    = torch.cuda.amp.GradScaler()
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)

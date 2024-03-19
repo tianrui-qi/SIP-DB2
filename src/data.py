@@ -18,7 +18,7 @@ class DNADataset(torch.utils.data.Dataset):
         snp_load_path: str, bam_load_fold: str, 
         sample_list: list[tuple[str, int]], 
         pval_threshold: float, pos_range: int, 
-        quality_threshold: float, length_threshold: int,
+        quality_threshold: float = 16, length_threshold: int = 96,
         **kwargs
     ) -> None:
         self.num = num

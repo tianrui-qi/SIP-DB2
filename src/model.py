@@ -9,7 +9,8 @@ __all__ = ["DNABERT2FC"]
 
 class DNABERT2FC(nn.Module):
     def __init__(
-        self, feats_coord: list[int], feats_final: list[int], **kwargs
+        self, feats_token: list[int], feats_coord: list[int], 
+        feats_final: list[int], **kwargs
     ) -> None:
         super(DNABERT2FC, self).__init__()
         self.feats_coord = feats_coord
@@ -18,6 +19,7 @@ class DNABERT2FC(nn.Module):
         self.dnabert2 = transformers.AutoModel.from_pretrained(
             "zhihan1996/DNABERT-2-117M", trust_remote_code=True
         )
+        self.fc_token = FC(feats_token)
         # coord embedding
         self.fc_coord = FC(feats_coord)
         # final classification/regression
@@ -32,16 +34,19 @@ class DNABERT2FC(nn.Module):
         # mean_embedding = torch.mean(hidden_states[0], dim=1)      # [B, 768]
         # max_embedding  = torch.max(hidden_states[0], dim=1)[0]    # [B, 768]
         token_embedding = torch.mean(hidden_states[0], dim=1)       # [B, 768]
-
+        token_embedding = self.fc_token(token_embedding)
         if coord == None: return token_embedding
         if mode == "token_embedding": return token_embedding
 
         # coord embedding
         coord_embedding = self.fc_coord(coord)
-
-        self.fc_final(token_embedding + coord_embedding)
-        if mode == "embedding": return token_embedding + coord_embedding
         if mode == "coord_embedding": return coord_embedding
+
+        # embedding
+        if mode == "embedding": return token_embedding + coord_embedding
+
+        # final classification/regression
+        if mode == None: return self.fc_final(token_embedding + coord_embedding)
 
 
 class FC(nn.Module):
