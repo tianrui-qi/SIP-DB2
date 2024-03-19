@@ -6,34 +6,48 @@ import tqdm
 import pysam
 import argparse
 
+
 __all__ = []
 
 
-def main() -> None:
+def main() -> None: 
     args = getArgs()
-    bam2csv(**vars(args))
+    bam2hdf(**vars(args))
 
 
 def getArgs():
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        description="Go through reads in each chromosome of the BAM file. " + 
+        "For each read, filter the read that is not paired, not properly " + 
+        "paired, and not mapped. Then, cut bases with quality less than " + 
+        "`quality_thresh=16` at beginning and end of reads and short reads " + 
+        "with length less than `length_thresh=96`. Calculate num of variants " +
+        "cover by each read with different p-value threshold. Save result as " +
+        "a HDF5, seperate result of each chromosome by key `/chr{$chr}`, " + 
+        "where `$chr` is 1-22 and X. Each chromosome result saves as " + 
+        "dataframe with columns `sequence`, `pos`, `1e+00`, `1e-01`, " + 
+        "`1e-02`, `1e-03`, `1e-04`, `1e-05`, and `1e-06`. For downstream " + 
+        "analysis, load the HDF5 instead of BAM since BAM is hard to random " + 
+        "index; we can only go through the whole BAM to filter reads, which " + 
+        "is time-consuming. The algorithm can process 30000 reads per " + 
+        "second, 1.5 hour for one sample, and need about 45GB memory. It's " + 
+        "not optimized for parallel computing; open multiple terminals to " + 
+        "process samples at the same time if memory is enough."
+    )
     parser.add_argument(
         "-B", type=str, required=True, dest="bam_load_path",
-        help="Path to the BAM file. Sturcture of `data_fold/bam/id.bam` is " +
+        help="Path to load the BAM file. Sturcture `data_fold/bam/id.bam` is " +
         "recommended."
     )
     parser.add_argument(
         "-S", type=str, required=True, dest="snp_load_path",
-        help="Path to the SNPs file that contain genetic variation."
+        help="Path to load the SNPs file end with .tsv that contain genetic " + 
+        "variation."
     )
     parser.add_argument(
-        "-C", type=str, required=False, dest="csv_save_fold", default=None,
-        help="Go through each chromosome's reads in BAM file and calculate " + 
-        "num of variants in each read with different p-value threshold. Then " +
-        "save each chromosome as seperate CSV file with header: " +
-        "`sequence`, `pos`, and string of p-value threshold `1e-0`, `1e-1`, " +
-        "`1e-2`, `1e-3`, `1e-4`, `1e-5`, and `1e-6`. Default: assume " + 
-        "`bam_load_path` has a structure of `data_fold/bam/id.bam`, " + 
-        "save csv to `data_fold/csv/id/chr.csv` where chr is 1-22 and X."
+        "-H", type=str, required=True, dest="hdf_save_path",
+        help="Path to save the HDF5 file. Sturcture `data_fold/hdf/id.h5` is " +
+        "recommended."
     )
     parser.add_argument(
         "-q", type=int, required=False, dest="quality_thresh", default=16,
@@ -44,19 +58,11 @@ def getArgs():
         help="Skip reads with length less than this value. Default: 96.",
     )
     args = parser.parse_args()
-
-    # set default value
-    data_fold = os.path.dirname(os.path.dirname(args.bam_load_path))
-    if args.csv_save_fold is None:
-        csv_fold = os.path.join(data_fold, "csv")
-        id = os.path.basename(args.bam_load_path).split(".")[0]
-        args.csv_save_fold = os.path.join(csv_fold, id)
-
     return args
 
 
-def bam2csv(
-    bam_load_path: str, snp_load_path: str, csv_save_fold: str,
+def bam2hdf(
+    bam_load_path: str, snp_load_path: str, hdf_save_path: str,
     quality_thresh: int = 16, length_thresh: int = 96,
 ) -> None:
     pval_thresh_list = [1e-0, 1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6]
@@ -78,22 +84,28 @@ def bam2csv(
             # since pos may have duplicated values
 
     for chr in tqdm.tqdm(
-        chr_list, unit="chr", desc=csv_save_fold,
-        smoothing=0.0, dynamic_ncols=True,
+        chr_list, unit="chr", 
+        desc=hdf_save_path, smoothing=0.0, dynamic_ncols=True,
     ):
-        if not os.path.exists(csv_save_fold): os.makedirs(csv_save_fold)
-        csv_save_path = os.path.join(csv_save_fold, f"{chr}.csv")
-
-        # check if this chromosome already processed
-        if os.path.exists(csv_save_path): continue
+        # if this chromosome already processed, skip
+        if os.path.exists(hdf_save_path):
+            with pd.HDFStore(hdf_save_path, mode='r') as hdf:
+                if f"/chr{chr}" in hdf.keys():
+                    tqdm.tqdm.write(
+                        f"{hdf_save_path}/chr{chr} already processed, skip."
+                    )
+                    continue
 
         # dataframe with column "sequence", "pos", 
-        # "1", "0.1", "0.01", "0.001", "0.0001", "1e-05", "1e-06"
-        read_dict = {key: [] for key in ["sequence", "pos"] + pval_thresh_list}
+        # "1e+00", "1e-01", "1e-02", "1e-03", "1e-04", "1e-05", "1e-06"
+        read_dict = {
+            key: [] for key in 
+            ["sequence", "pos"] + 
+            [f"{pval_thresh:.0e}" for pval_thresh in pval_thresh_list]
+        }
         for read in tqdm.tqdm(
-            pysam.AlignmentFile(bam_load_path, "rb").fetch(chr), 
-            unit="read", desc=csv_save_path, 
-            leave=False, smoothing=0.0, dynamic_ncols=True, 
+            pysam.AlignmentFile(bam_load_path, "rb").fetch(chr), unit="read", 
+            desc=chr, leave=False, smoothing=0.0, dynamic_ncols=True, 
         ):
             pos = read.reference_start
             sequence = read.query_sequence
@@ -128,10 +140,14 @@ def bam2csv(
                     num = np.sum(
                         snp_dict[pval_thresh][chr][pos:pos+len(sequence)]
                     )
-                read_dict[pval_thresh].append(num)
+                read_dict[f"{pval_thresh:.0e}"].append(num)
 
         # save
-        pd.DataFrame(read_dict).to_csv(csv_save_path, index=False)
+        if not os.path.exists(os.path.dirname(hdf_save_path)):
+            os.makedirs(os.path.dirname(hdf_save_path))
+        pd.DataFrame(read_dict).to_hdf(
+            hdf_save_path, key=f"/chr{chr}", mode="a", format="f", index=False
+        )
 
 
 if __name__ == "__main__": main()
