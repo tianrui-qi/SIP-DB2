@@ -21,7 +21,7 @@ class Config:
             "pos_range": 64,    # since averge read length is 124
         }
         self.model = {
-            "feats_token": [768, 4096, 4096, 4096, 768],
+            "feats_token": [768, 4096, 4096, 768],
             "feats_coord": [2, 1024, 768],
             "feats_final": [768, 1],
         }

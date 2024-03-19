@@ -4,15 +4,34 @@ from torch import Tensor
 import transformers
 
 
-__all__ = ["DNABERT2FC"]
+__all__ = ["PretrainModel", "FinetuneModel"]
 
 
-class DNABERT2FC(nn.Module):
+class PretrainModel(nn.Module):
+    def __init__(self, *vars, **kwargs) -> None:
+        super(PretrainModel, self).__init__()
+        self.dnabert2 = transformers.AutoModel.from_pretrained(
+            "zhihan1996/DNABERT-2-117M", trust_remote_code=True
+        )
+
+    def forward(self, token: Tensor, *vars, **kwargs) -> Tensor:
+        # token embedding by DNABERT2
+        hidden_states = self.dnabert2(token)    # ( [B, N, 768], [B, 768] )
+        # embedding with mean or max pooling
+        # mean_embedding = torch.mean(hidden_states[0], dim=1)      # [B, 768]
+        # max_embedding  = torch.max(hidden_states[0], dim=1)[0]    # [B, 768]
+        token_embedding = torch.mean(hidden_states[0], dim=1)       # [B, 768]
+
+        return token_embedding
+
+
+class FinetuneModel(nn.Module):
     def __init__(
         self, feats_token: list[int], feats_coord: list[int], 
-        feats_final: list[int], **kwargs
+        feats_final: list[int]
     ) -> None:
-        super(DNABERT2FC, self).__init__()
+        super(FinetuneModel, self).__init__()
+        self.feats_token = feats_token
         self.feats_coord = feats_coord
         self.feats_final = feats_final
         # token embedding
@@ -26,7 +45,7 @@ class DNABERT2FC(nn.Module):
         self.fc_final = FC(feats_final)
 
     def forward(
-        self, token: Tensor, coord: Tensor = None, mode: str = None
+        self, token: Tensor, coord: Tensor, embedding: bool = False,
     ) -> Tensor:
         # token embedding by DNABERT2
         hidden_states = self.dnabert2(token)    # ( [B, N, 768], [B, 768] )
@@ -35,22 +54,19 @@ class DNABERT2FC(nn.Module):
         # max_embedding  = torch.max(hidden_states[0], dim=1)[0]    # [B, 768]
         token_embedding = torch.mean(hidden_states[0], dim=1)       # [B, 768]
         token_embedding = self.fc_token(token_embedding)
-        if coord == None: return token_embedding
-        if mode == "token_embedding": return token_embedding
 
         # coord embedding
         coord_embedding = self.fc_coord(coord)
-        if mode == "coord_embedding": return coord_embedding
 
         # embedding
-        if mode == "embedding": return token_embedding + coord_embedding
+        if embedding: return token_embedding + coord_embedding
 
         # final classification/regression
-        if mode == None: return self.fc_final(token_embedding + coord_embedding)
+        return self.fc_final(token_embedding + coord_embedding)
 
 
 class FC(nn.Module):
-    def __init__(self, feats: list[int], **kwargs) -> None:
+    def __init__(self, feats: list[int]) -> None:
         super(FC, self).__init__()
         self.layers = nn.ModuleList([
             nn.Sequential(

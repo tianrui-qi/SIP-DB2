@@ -27,8 +27,8 @@ def main():
     setSeed(42)
     config = src.Config()
     src.Trainer(**config.runner,
-        trainset=src.DNADataset(**config.trainset),
-        model=src.DNABERT2FC(**config.model),
+        trainset=src.FinetuneDataset(**config.trainset),
+        model=src.FinetuneModel(**config.model),
     ).fit()
 
 

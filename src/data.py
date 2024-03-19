@@ -9,10 +9,10 @@ import pysam
 import random
 
 
-__all__ = ["DNADataset"]
+__all__ = ["FinetuneDataset"]
 
 
-class DNADataset(torch.utils.data.Dataset):
+class FinetuneDataset(torch.utils.data.Dataset):
     def __init__(
         self, num: int,
         snp_load_path: str, bam_load_fold: str, 

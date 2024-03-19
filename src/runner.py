@@ -20,7 +20,8 @@ class Trainer:
         self, device: str, max_epoch: int, accumu_steps: int, 
         ckpt_save_fold: str, ckpt_load_path: str, ckpt_load_lr: bool,
         batch_size: int, num_workers: int, lr: float, T_max: int, 
-        trainset: src.data.DNADataset, model: src.model.DNABERT2FC,
+        trainset: src.data.FinetuneDataset, model: src.model.FinetuneModel,
+        *vars, **kwargs
     ) -> None:
         # train
         self.device = device
@@ -64,7 +65,7 @@ class Trainer:
         print(f'The model has {para_num:,} trainable parameters')
         """
 
-    def fit(self) -> None:
+    def fit(self, *vars, **kwargs) -> None:
         self._loadCkpt()
         for self.epoch in tqdm.tqdm(
             range(self.epoch, self.max_epoch+1), 
@@ -140,9 +141,10 @@ class Trainer:
 
         torch.save({
             'epoch': self.epoch,  # epoch index start from 1
+            'feats_token': self.model.feats_token,
             'feats_coord': self.model.feats_coord,
             'feats_final': self.model.feats_final,
-            'dnabert2': self.model.dnabert2.state_dict(),
+            'fc_token': self.model.fc_token.state_dict(),
             'fc_coord': self.model.fc_coord.state_dict(),
             'fc_final': self.model.fc_final.state_dict(),
             'scaler': self.scaler.state_dict(),
@@ -156,11 +158,11 @@ class Trainer:
         ckpt = torch.load("{}.ckpt".format(self.ckpt_load_path))
         
         self.epoch = ckpt['epoch']+1  # start train from next epoch index
-        self.model.dnabert2.load_state_dict(ckpt['dnabert2'])
+        self.model.fc_token.load_state_dict(ckpt['fc_token'])
         self.model.fc_coord.load_state_dict(ckpt['fc_coord'])
         self.model.fc_final.load_state_dict(ckpt['fc_final'])
         self.scaler.load_state_dict(ckpt['scaler'])
-        
+
         if not self.ckpt_load_lr: return
         self.optimizer.load_state_dict(ckpt['optimizer'])
         self.scheduler.load_state_dict(ckpt['scheduler'])
