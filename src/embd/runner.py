@@ -21,7 +21,7 @@ class Trainer:
         self, device: str, max_epoch: int, accumu_steps: int, 
         ckpt_save_fold: str, ckpt_load_path: str, ckpt_load_lr: bool,
         batch_size: int, num_workers: int, lr: float,
-        trainset: FinetuneDataset, 
+        trainset: FinetuneDataset, validset: FinetuneDataset,
         model: FinetuneModel,
         *vars, **kwargs
     ) -> None:
@@ -38,6 +38,10 @@ class Trainer:
         self.trainloader = torch.utils.data.DataLoader(
             dataset=trainset, batch_size=batch_size, num_workers=num_workers, 
             persistent_workers=True, pin_memory=True, shuffle=True, 
+        )
+        self.validloader = torch.utils.data.DataLoader(
+            dataset=validset, batch_size=batch_size, num_workers=num_workers,
+            persistent_workers=True, pin_memory=True, shuffle=False,
         )
         # tokenizer, sequence [str] -> token [Tensor]
         self.tokenizer = transformers.AutoTokenizer.from_pretrained(
@@ -75,6 +79,7 @@ class Trainer:
             unit="epoch", initial=self.epoch, dynamic_ncols=True,
         ):
             self._trainEpoch()
+            self._validEpoch()
             self._updateLr()
             self._saveCkpt()
 
@@ -123,6 +128,47 @@ class Trainer:
             train_loss = []
             # record: progress bar
             pbar.update()
+
+    @torch.no_grad()
+    def _validEpoch(self) -> None:
+        self.model.eval()
+
+        if self.validloader is None: return
+
+        # record: progress bar
+        pbar = tqdm.tqdm(
+            total=int(len(self.validloader)/self.accumu_steps), 
+            desc='_validEpoch', leave=False, unit="steps", smoothing=0.0, 
+            dynamic_ncols=True,
+        )
+        # record: tensorboard
+        valid_loss = []
+
+        for i, (sequence, coord, label) in enumerate(self.validloader):
+            # put frames and labels in GPU
+            token = self.tokenizer(
+                sequence, return_tensors = 'pt', padding=True
+            )["input_ids"].squeeze(0).to(self.device)
+            coord = coord.to(self.device)
+            label = label.to(self.device)
+
+            # forward
+            predis = self.model(token, coord).squeeze(-1)
+            loss_value  = torch.nn.functional.mse_loss(predis, label)
+
+            # record: tensorboard
+            valid_loss.append(loss_value.item())
+
+            # update model parameters
+            if (i+1) % self.accumu_steps != 0: continue
+            # record: progress bar
+            pbar.update()
+
+        # record: tensorboard
+        self.writer.add_scalars(
+            'scalars/loss', {'valid': torch.mean(torch.as_tensor(valid_loss))}, 
+            self.epoch * len(self.trainloader) / self.accumu_steps
+        )
 
     @torch.no_grad()
     def _updateLr(self) -> None:

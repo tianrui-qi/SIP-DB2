@@ -20,6 +20,20 @@ class Config:
             "pval_threshold": 1e-3,
             "pos_range": 64,    # since averge read length is 124
         }
+        self.validset = {
+            "num": 128 * 8 * 200,
+            # path
+            "snp_load_path": data_fold + "snps.tsv",
+            "bam_load_fold": data_fold + "bam/",
+            # sample
+            "sample_list": [    # list of sample (id, label)
+                ("SRR8924597", 0),  # normal skin   pre  anti-PD-1
+                ("SRR8924596", 1),  # BCC tumor     post anti-PD-1
+            ],
+            # filter
+            "pval_threshold": 1e-3,
+            "pos_range": 64,    # since averge read length is 124
+        }
         self.model = {
             "feats_token": [768, 4096, 4096, 768],
             "feats_coord": [2, 1024, 768],

@@ -44,5 +44,6 @@ def embd(*vargs, **kwargs):
     config = Config()
     Trainer(**config.runner,
         trainset=FinetuneDataset(**config.trainset),
+        validset=FinetuneDataset(**config.validset),
         model=FinetuneModel(**config.model),
     ).fit()
