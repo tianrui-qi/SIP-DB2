@@ -4,7 +4,7 @@ from torch import Tensor
 import transformers
 
 
-__all__ = ["PretrainModel", "FinetuneModel"]
+__all__ = []
 
 
 class PretrainModel(nn.Module):

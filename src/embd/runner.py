@@ -9,18 +9,20 @@ import transformers
 import os
 import tqdm
 
-import src.data, src.model
+from .data import FinetuneDataset
+from .model import FinetuneModel
 
 
-__all__ = ["Trainer"]
+__all__ = []
 
 
 class Trainer:
     def __init__(
         self, device: str, max_epoch: int, accumu_steps: int, 
         ckpt_save_fold: str, ckpt_load_path: str, ckpt_load_lr: bool,
-        batch_size: int, num_workers: int, lr: float, T_max: int, 
-        trainset: src.data.FinetuneDataset, model: src.model.FinetuneModel,
+        batch_size: int, num_workers: int, lr: float,
+        trainset: FinetuneDataset, 
+        model: FinetuneModel,
         *vars, **kwargs
     ) -> None:
         # train
@@ -48,8 +50,8 @@ class Trainer:
         # optimizer
         self.scaler    = torch.cuda.amp.GradScaler()
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
-        self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-            self.optimizer, T_max=T_max, eta_min=1e-10
+        self.scheduler = torch.optim.lr_scheduler.ExponentialLR(
+            self.optimizer, gamma=0.95,
         )
         # recorder
         self.writer = writer.SummaryWriter()
@@ -155,7 +157,7 @@ class Trainer:
     @torch.no_grad()
     def _loadCkpt(self) -> None:
         if self.ckpt_load_path == "": return
-        ckpt = torch.load("{}.ckpt".format(self.ckpt_load_path))
+        ckpt = torch.load(self.ckpt_load_path)
         
         self.epoch = ckpt['epoch']+1  # start train from next epoch index
         self.model.fc_token.load_state_dict(ckpt['fc_token'])

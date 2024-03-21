@@ -9,7 +9,7 @@ import pysam
 import random
 
 
-__all__ = ["FinetuneDataset"]
+__all__ = []
 
 
 class FinetuneDataset(torch.utils.data.Dataset):

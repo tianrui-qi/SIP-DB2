@@ -1,13 +1,13 @@
-__all__ = ["Config"]
+__all__ = []
 
 
 class Config:
     def __init__(self, **kwargs) -> None:
-        data_fold = "/mnt/efs_v2/tag_onc/users/tianrui.qi/TCGA-Onc/data/"
+        data_fold = "data/stanford/"
         self.trainset = {
-            "num": 256 * 4 * 1000,
+            "num": 128 * 8 * 1000,
             # path
-            "snp_load_path": data_fold + "snp/snp_filter.tsv",
+            "snp_load_path": data_fold + "snps.tsv",
             "bam_load_fold": data_fold + "bam/",
             # sample
             "sample_list": [    # list of sample (id, label)
@@ -29,15 +29,14 @@ class Config:
             # train
             "device": "cuda",
             "max_epoch": 800, 
-            "accumu_steps": 4, 
+            "accumu_steps": 8, 
             # checkpoint
-            "ckpt_save_fold": "ckpt/finetune/",
-            "ckpt_load_path": "",       # path without .ckpt
+            "ckpt_save_fold": "ckpt/embd-finetune/",
+            "ckpt_load_path": "",
             "ckpt_load_lr"  : False,    # load lr from ckpt
             # data
-            "batch_size": 256, 
+            "batch_size": 128, 
             "num_workers": 8,
             # optimizer
             "lr": 5e-4,
-            "T_max": 15,    # for CosineAnnealingLR
         }
