@@ -72,6 +72,12 @@ def bam2hdf(
                     )
                     continue
 
+        # bam file
+        try:
+            bam_file = pysam.AlignmentFile(bam_load_path, "rb").fetch(chr)
+        except ValueError:
+            bam_file = pysam.AlignmentFile(bam_load_path, "rb").fetch(f"chr{chr}")
+
         # dataframe with column "sequence", "pos", 
         # "1e+00", "1e-01", "1e-02", "1e-03", "1e-04", "1e-05", "1e-06"
         read_dict = {
@@ -80,7 +86,7 @@ def bam2hdf(
             [f"{pval_thresh:.0e}" for pval_thresh in pval_thresh_list]
         }
         for read in tqdm.tqdm(
-            pysam.AlignmentFile(bam_load_path, "rb").fetch(chr), unit="read", 
+            bam_file, unit="read", 
             desc=chr, leave=False, smoothing=0.0, dynamic_ncols=True, 
         ):
             pos = read.reference_start
