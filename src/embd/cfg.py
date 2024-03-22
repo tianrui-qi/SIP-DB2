@@ -5,7 +5,7 @@ class Config:
     def __init__(self, **kwargs) -> None:
         data_fold = "data/stanford/"
         self.trainset = {
-            "num": 128 * 8 * 1000,
+            "num": 64 * 16 * 1000,
             # path
             "snp_load_path": data_fold + "snps.tsv",
             "bam_load_fold": data_fold + "bam/",
@@ -43,13 +43,13 @@ class Config:
             # train
             "device": "cuda",
             "max_epoch": 800, 
-            "accumu_steps": 8, 
+            "accumu_steps": 16, 
             # checkpoint
             "ckpt_save_fold": "ckpt/embd-finetune/",
             "ckpt_load_path": "",
             "ckpt_load_lr"  : False,    # load lr from ckpt
             # data
-            "batch_size": 128, 
+            "batch_size": 64, 
             "num_workers": 8,
             # optimizer
             "lr": 5e-4,

@@ -13,16 +13,14 @@ def main() -> None:
     src.umapArgs(subparsers.add_parser('umap'))
     src.bam2hdfArgs(subparsers.add_parser('bam2hdf'))
     src.hdf2embdArgs(subparsers.add_parser('hdf2embd'))
+    src.embd2umapArgs(subparsers.add_parser('embd2umap'))
     args = parser.parse_args()
 
-    if args.func == "embd":
-        src.embd(**vars(args))
-    if args.func == "umap":
-        src.umap(**vars(args))
-    if args.func == "bam2hdf": 
-        src.bam2hdf(**vars(args))
-    if args.func == "hdf2embd": 
-        src.hdf2embd(**vars(args))
+    if args.func == "embd":      src.embd(**vars(args))
+    if args.func == "umap":      src.umap(**vars(args))
+    if args.func == "bam2hdf":   src.bam2hdf(**vars(args))
+    if args.func == "hdf2embd":  src.hdf2embd(**vars(args))
+    if args.func == "embd2umap": src.embd2umap(**vars(args))
 
 
 if __name__ == "__main__": main()

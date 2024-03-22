@@ -84,12 +84,11 @@ def hdf2embd(
         model.fc_coord.load_state_dict(ckpt['fc_coord'])
     model.eval().to(device)
 
-    chr_list = [str(i) for i in range(1, 23)] + ["X"]   # BAM naming convention
     pval_thresh_list = [1e-0, 1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6]
 
     for chr in tqdm.tqdm(
-        chr_list, unit="chr", 
-        desc=embd_save_fold, smoothing=0.0, dynamic_ncols=True,
+        [str(i) for i in range(1, 23)] + ["X"],     # BAM naming convention
+        unit="chr", desc=embd_save_fold, smoothing=0.0, dynamic_ncols=True,
     ):
         embd_save_path = os.path.join(embd_save_fold, f"{chr}.npy")
 

@@ -19,20 +19,20 @@ def umapArgs(parser: argparse.ArgumentParser) -> None:
         "embedding."
     )
     parser.add_argument(
-        "-U", type=str, required=True, dest="umap_save_fold",
-        help="Fold to save the UMAP. For each chromosome, the UMAP will be " + 
-        "calculated on all samples' embedding of that chromosome and saved " + 
-        "as `umap_save_fold/$chr.pkl` using joblib."
+        "-C", type=str, required=True, dest="ckpt_save_fold",
+        help="Fold to save fitted UMAP. For each chromosome, the UMAP will be " + 
+        "calculated on all samples' embedding and saved as " +
+        "`ckpt_save_fold/$chr.pkl` using joblib."
     )
 
 
-def umap(embd_load_fold: str, umap_save_fold: str, *vargs, **kwargs) -> None:
+def umap(embd_load_fold: str, ckpt_save_fold: str, *vargs, **kwargs) -> None:
     for chr in tqdm.tqdm(
         [str(i) for i in range(1, 23)] + ["X"], 
-        desc=umap_save_fold, unit="chr", smoothing=0, dynamic_ncols=True,
+        desc=ckpt_save_fold, unit="chr", smoothing=0, dynamic_ncols=True,
     ):
         # check if umap of current chromosome already exists
-        if os.path.exists(os.path.join(umap_save_fold, f"{chr}.pkl")):
+        if os.path.exists(os.path.join(ckpt_save_fold, f"{chr}.pkl")):
             continue
         # get pretrain embedding of current chr of all sample
         pretrain = None
@@ -50,9 +50,9 @@ def umap(embd_load_fold: str, umap_save_fold: str, *vargs, **kwargs) -> None:
         # calculate the umap and save the umap
         reducer = cuml.UMAP(n_components=2)
         reducer.fit(pretrain)
-        if not os.path.exists(umap_save_fold):
-            os.makedirs(umap_save_fold)
-        joblib.dump(reducer, os.path.join(umap_save_fold, f"{chr}.pkl"))
+        if not os.path.exists(ckpt_save_fold):
+            os.makedirs(ckpt_save_fold)
+        joblib.dump(reducer, os.path.join(ckpt_save_fold, f"{chr}.pkl"))
         # release memory
         # refer to https://github.com/rapidsai/cuml/issues/5666
         gc.collect()
