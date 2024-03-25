@@ -50,7 +50,7 @@ def embd2umapArgs(parser: argparse.ArgumentParser) -> None:
 
 def embd2umap(
     embd_load_fold: str, ckpt_load_fold: str, umap_save_fold: str,
-    pval_thresh: float = 1e-0, batch_size: int = 100, *vargs, **kwargs,
+    pval_thresh: float = 1e-04, batch_size: int = 100, *vargs, **kwargs,
 ) -> None:
     for chr in tqdm.tqdm(
         [str(i) for i in range(1, 23)] + ["X"],     # BAM naming convention

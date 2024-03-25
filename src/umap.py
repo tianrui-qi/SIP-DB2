@@ -24,9 +24,17 @@ def umapArgs(parser: argparse.ArgumentParser) -> None:
         "calculated on all samples' embedding and saved as " +
         "`ckpt_save_fold/$chr.pkl` using joblib."
     )
+    parser.add_argument(
+        "-p", type=float, required=False, dest="pval_thresh", default=1e-04,
+        help="P-value threshold for filtering reads, i.e., only keep reads " + 
+        "that cover at least one variant with p-value <= pval_thresh. " + 
+        "Default: 1e-04."
+    )
 
-
-def umap(embd_load_fold: str, ckpt_save_fold: str, *vargs, **kwargs) -> None:
+def umap(
+    embd_load_fold: str, ckpt_save_fold: str, pval_thresh: float = 1e-04, 
+    *vargs, **kwargs
+) -> None:
     for chr in tqdm.tqdm(
         [str(i) for i in range(1, 23)] + ["X"], 
         desc=ckpt_save_fold, unit="chr", smoothing=0, dynamic_ncols=True,
@@ -34,24 +42,24 @@ def umap(embd_load_fold: str, ckpt_save_fold: str, *vargs, **kwargs) -> None:
         # check if umap of current chromosome already exists
         if os.path.exists(os.path.join(ckpt_save_fold, f"{chr}.pkl")):
             continue
-        # get pretrain embedding of current chr of all sample
-        pretrain = None
+        # get embedding of current chr of all sample
+        embd = None
         for run in tqdm.tqdm(
             os.listdir(embd_load_fold), 
             desc=chr, unit="run", smoothing=0, dynamic_ncols=True, leave=False, 
         ):
-            pretrain_run = np.load(
-                os.path.join(embd_load_fold, run, f"{chr}.npy")
-            )[:, 0:768]
-            if pretrain is None:
-                pretrain = pretrain_run
+            embd_run = np.load(os.path.join(embd_load_fold, run, f"{chr}.npy"))
+            embd_run = embd_run[embd_run[:, 769-int(np.log10(pval_thresh))]>=1, :]
+            embd_run = embd_run[:, 0:768]
+            if embd is None:
+                embd = embd_run
             else:
-                pretrain = np.concatenate((pretrain, pretrain_run))
-        # calculate the umap and save the umap
+                embd = np.concatenate((embd, embd_run))
+        # calculate the umap
         reducer = cuml.UMAP(n_components=2)
-        reducer.fit(pretrain)
-        if not os.path.exists(ckpt_save_fold):
-            os.makedirs(ckpt_save_fold)
+        reducer.fit(embd)
+        # save the umap
+        if not os.path.exists(ckpt_save_fold): os.makedirs(ckpt_save_fold)
         joblib.dump(reducer, os.path.join(ckpt_save_fold, f"{chr}.pkl"))
         # release memory
         # refer to https://github.com/rapidsai/cuml/issues/5666

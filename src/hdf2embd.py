@@ -9,7 +9,7 @@ import tqdm
 import warnings
 import argparse
 
-import src.embd.model
+from src.embd.model import PretrainModel, FinetuneModel
 
 
 __all__ = ["hdf2embdArgs", "hdf2embd"]
@@ -49,10 +49,10 @@ def hdf2embdArgs(parser: argparse.ArgumentParser) -> None:
         "Default: None."
     )
     parser.add_argument(
-        "-p", type=float, required=False, dest="pval_thresh", default=1e-03,
+        "-p", type=float, required=False, dest="pval_thresh", default=1e-04,
         help="P-value threshold for filtering reads, i.e., only keep reads " + 
         "that cover at least one variant with p-value <= pval_thresh. " + 
-        "Default: 1e-03."
+        "Default: 1e-04."
     )
     parser.add_argument(
         "-b", type=int, required=False, dest="batch_size", default=100,
@@ -64,7 +64,7 @@ def hdf2embdArgs(parser: argparse.ArgumentParser) -> None:
 def hdf2embd(
     hdf_load_path: str, embd_save_fold: str, 
     ckpt_load_path: str = None,
-    pval_thresh: float = 1e-03, batch_size: int = 100,
+    pval_thresh: float = 1e-04, batch_size: int = 100,
     *vargs, **kwargs
 ) -> None:
     # model
@@ -73,10 +73,10 @@ def hdf2embd(
         "zhihan1996/DNABERT-2-117M", trust_remote_code=True
     )
     if ckpt_load_path is None:
-        model = src.embd.model.PretrainModel()
+        model = PretrainModel()
     else:
         ckpt = torch.load(ckpt_load_path)
-        model = src.embd.model.FinetuneModel(
+        model = FinetuneModel(
             feats_token=ckpt["feats_token"], feats_coord=ckpt["feats_coord"], 
             feats_final=ckpt["feats_final"]
         )
