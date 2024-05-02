@@ -1,5 +1,3 @@
 from .embd import *
-from .umap import *
-from .bam2hdf import *
-from .hdf2embd import *
-from .embd2umap import *
+from .bam2seq import *
+from .seq2embd import *

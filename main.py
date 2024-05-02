@@ -10,17 +10,13 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest='func')
     src.embdArgs(subparsers.add_parser('embd'))
-    src.umapArgs(subparsers.add_parser('umap'))
-    src.bam2hdfArgs(subparsers.add_parser('bam2hdf'))
-    src.hdf2embdArgs(subparsers.add_parser('hdf2embd'))
-    src.embd2umapArgs(subparsers.add_parser('embd2umap'))
+    src.bam2seqArgs(subparsers.add_parser('bam2seq'))
+    src.seq2embdArgs(subparsers.add_parser('seq2embd'))
     args = parser.parse_args()
 
     if args.func == "embd":      src.embd(**vars(args))
-    if args.func == "umap":      src.umap(**vars(args))
-    if args.func == "bam2hdf":   src.bam2hdf(**vars(args))
-    if args.func == "hdf2embd":  src.hdf2embd(**vars(args))
-    if args.func == "embd2umap": src.embd2umap(**vars(args))
+    if args.func == "bam2seq":   src.bam2seq(**vars(args))
+    if args.func == "seq2embd":  src.seq2embd(**vars(args))
 
 
 if __name__ == "__main__": main()

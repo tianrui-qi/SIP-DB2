@@ -12,14 +12,14 @@ import argparse
 from src.embd.model import PretrainModel, FinetuneModel
 
 
-__all__ = ["hdf2embdArgs", "hdf2embd"]
+__all__ = ["seq2embdArgs", "seq2embd"]
 
 
 transformers.logging.set_verbosity_error()
 warnings.filterwarnings("ignore", message="Unable to import Triton*")
 
 
-def hdf2embdArgs(parser: argparse.ArgumentParser) -> None:
+def seq2embdArgs(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "-H", type=str, required=True, dest="hdf_load_path",
         help="Path to load the HDF5 file. Sturcture `data_fold/hdf/$id.h5` " + 
@@ -51,7 +51,7 @@ def hdf2embdArgs(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "-p", type=float, required=False, dest="pval_thresh", default=1e-04,
         help="P-value threshold for filtering reads, i.e., only keep reads " + 
-        "that cover at least one variant with p-value <= pval_thresh. " + 
+        "that cover at least one variant with p-value < pval_thresh. " + 
         "Default: 1e-04."
     )
     parser.add_argument(
@@ -61,7 +61,7 @@ def hdf2embdArgs(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def hdf2embd(
+def seq2embd(
     hdf_load_path: str, embd_save_fold: str, 
     ckpt_load_path: str = None,
     pval_thresh: float = 1e-04, batch_size: int = 100,

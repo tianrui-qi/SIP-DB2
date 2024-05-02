@@ -7,10 +7,10 @@ import pysam
 import argparse
 
 
-__all__ = ["bam2hdfArgs", "bam2hdf"]
+__all__ = ["bam2seqArgs", "bam2seq"]
 
 
-def bam2hdfArgs(parser: argparse.ArgumentParser) -> None:
+def bam2seqArgs(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "-B", type=str, required=True, dest="bam_load_path",
         help="Path to load the BAM file. Sturcture `data_fold/bam/$id.bam` " + 
@@ -18,8 +18,7 @@ def bam2hdfArgs(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "-S", type=str, required=True, dest="snps_load_path",
-        help="Path to load the SNPs file end with .tsv that contain genetic " + 
-        "variation."
+        help="Path to load the SNPs file contain genetic variation."
     )
     parser.add_argument(
         "-H", type=str, required=True, dest="hdf_save_path",
@@ -36,7 +35,7 @@ def bam2hdfArgs(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def bam2hdf(
+def bam2seq(
     bam_load_path: str, snps_load_path: str, hdf_save_path: str,
     quality_thresh: int = 16, length_thresh: int = 96,
     *vargs, **kwargs
@@ -44,39 +43,36 @@ def bam2hdf(
     pval_thresh_list = [1e-0, 1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6]
     chr_list = [str(i) for i in range(1, 23)] + ["X"]   # BAM naming convention
 
-    snps_dict = {}
-    snps_df = pd.read_csv(snps_load_path, sep="\t")
-    for pval_thresh in pval_thresh_list:
-        snps_dict[pval_thresh] = {}
-        snps_df = snps_df[snps_df["Pval"] <= pval_thresh]
-        for c in snps_df["Chr"].unique():
-            # key, BAM naming convention
-            chr = str(c) if c != 23 else "X"
-            # value, one hot, 0/1 for non-variant/variant
-            pos = snps_df[snps_df["Chr"] == c]["Pos"].values
-            snps_dict[pval_thresh][chr] = np.zeros(pos.max()+1)
-            snps_dict[pval_thresh][chr][pos] = 1
-            # len(pos) may differ from snps_dict[pval_thresh][chr].sum()
-            # since pos may have duplicated values
+    # load snps
+    snps_df = pd.read_csv(snps_load_path, usecols=["Chr", "Pos", "Pval"])
 
-    for chr in tqdm.tqdm(
-        chr_list, unit="chr", 
+    for chromosome in tqdm.tqdm(
+        chr_list, unit="chromosome", 
         desc=hdf_save_path, smoothing=0.0, dynamic_ncols=True,
     ):
         # if this chromosome already processed, skip
         if os.path.exists(hdf_save_path):
             with pd.HDFStore(hdf_save_path, mode='r') as hdf:
-                if f"/chr{chr}" in hdf.keys():
+                if f"/chr{chromosome}" in hdf.keys():
                     tqdm.tqdm.write(
-                        f"{hdf_save_path}/chr{chr} already processed, skip."
+                        f"{hdf_save_path}/chr{chromosome} already processed, skip."
                     )
                     continue
 
+        snps_dict = {}
+        for pval_thresh in pval_thresh_list:
+            # value, one hot, 0/1 for non-variant/variant
+            pos = snps_df[
+                (snps_df["Chr"] == int(chromosome if chromosome != "X" else "23")) & 
+                (snps_df["Pval"] < pval_thresh)
+            ]["Pos"].values
+            snps_dict[pval_thresh] = np.zeros(pos.max()+1)
+            snps_dict[pval_thresh][pos] = 1
+            # len(pos) may differ from snps_dict[pval_thresh].sum()
+            # since pos may have duplicated values
+
         # bam file
-        try:
-            bam_file = pysam.AlignmentFile(bam_load_path, "rb").fetch(chr)
-        except ValueError:
-            bam_file = pysam.AlignmentFile(bam_load_path, "rb").fetch(f"chr{chr}")
+        bam_file = pysam.AlignmentFile(bam_load_path, "rb")
 
         # dataframe with column "sequence", "pos", 
         # "1e+00", "1e-01", "1e-02", "1e-03", "1e-04", "1e-05", "1e-06"
@@ -86,8 +82,9 @@ def bam2hdf(
             [f"{pval_thresh:.0e}" for pval_thresh in pval_thresh_list]
         }
         for read in tqdm.tqdm(
-            bam_file, unit="read", 
-            desc=chr, leave=False, smoothing=0.0, dynamic_ncols=True, 
+            bam_file.fetch(bam_file.references[chr_list.index(chromosome)]), 
+            unit="read", desc=f"chromosome{chromosome}", 
+            leave=False, smoothing=0.0, dynamic_ncols=True, 
         ):
             pos = read.reference_start
             sequence = read.query_sequence
@@ -97,7 +94,7 @@ def bam2hdf(
             if not read.is_paired: continue
             if not read.is_proper_pair: continue
             if read.is_unmapped: continue
-            #if read.mate_is_unmapped: continue
+            if read.mate_is_unmapped: continue
 
             # cut low quality bases at beginning and end
             while len(quality) > 0 and \
@@ -116,11 +113,11 @@ def bam2hdf(
             read_dict["pos"].append(pos)
             for pval_thresh in pval_thresh_list:
                 # if current chromosome does not have any variant
-                if chr not in snps_dict[pval_thresh]:
+                if pval_thresh not in snps_dict:
                     num = 0
                 else:
                     num = np.sum(
-                        snps_dict[pval_thresh][chr][pos:pos+len(sequence)]
+                        snps_dict[pval_thresh][pos:pos+len(sequence)]
                     )
                 read_dict[f"{pval_thresh:.0e}"].append(num)
 
@@ -128,5 +125,5 @@ def bam2hdf(
         if not os.path.exists(os.path.dirname(hdf_save_path)):
             os.makedirs(os.path.dirname(hdf_save_path))
         pd.DataFrame(read_dict).to_hdf(
-            hdf_save_path, key=f"/chr{chr}", mode="a", format="f", index=False
+            hdf_save_path, key=f"/chr{chromosome}", mode="a", format="f", index=False
         )
