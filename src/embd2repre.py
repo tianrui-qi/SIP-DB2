@@ -5,91 +5,141 @@ import pandas as pd
 
 import os
 import tqdm
-import matplotlib.pyplot as plt
-from typing import Literal
 
 
 class Selector:
-    def __init__(self, feature_fold: str, ascending: bool = False) -> None:
+    def __init__(self, feature_fold: str) -> None:
         # path
         self.feature_fold = feature_fold
         self.profile_path = os.path.join(feature_fold, "profile.csv")
         if not os.path.exists(feature_fold): os.makedirs(feature_fold)
-        # parameter
-        self.ascending = ascending
 
-        self.profile = pd.DataFrame(columns=["embd_path", "feature_path"])
-        if os.path.exists(self.profile_path): 
+        # profile
+        if os.path.exists(self.profile_path):
             self.profile = pd.read_csv(self.profile_path)
+        else:
+            self.profile = pd.DataFrame(columns=["embd_fold"])
+            self.profile.to_csv(self.profile_path, index=False)
 
-    def add(self, embd_path: str, pval_thresh: float = None) -> None:
-        # if embd_path already in profile, skip
-        if embd_path in self.profile["embd_path"].values: return
-        # if not, add to end of profile
-        x1index = len(self.profile)
-        self.profile.loc[x1index, "embd_path"] = embd_path
-        self.profile.loc[x1index, "feature_path"] = os.path.join(
-            self.feature_fold, f"{x1index:04}.npy"
-        )
-
-        x1embd, x1pos = Selector.getEmbd(embd_path, pval_thresh)
-        for x2index in tqdm.tqdm(
-            range(len(self.profile)), desc=f"{x1index:04}", 
-            dynamic_ncols=True, unit="run", leave=False,
-        ):
-            x2embd, x2pos = Selector.getEmbd(
-                self.profile.loc[x2index, "embd_path"], pval_thresh
-            )
-            # distance matrix between x1 and x2
-            distance_matrix = torch.cdist(  # (Ni, Nj)
-                torch.tensor(x1embd), torch.tensor(x2embd)
-            ).numpy()
-            # combine pos and distance as feature
-            x1 = np.column_stack((x1pos, np.max(distance_matrix, axis=1)))
-            x2 = np.column_stack((x2pos, np.max(distance_matrix, axis=0)))
-            # if there are previous distance result, load and concate; we can 
-            # direct concate since we only care about the max/min distance of 
-            # each unique position; after sort and drop duplicates, the length
-            # of distance result will not change
-            x1 = np.concatenate([x1, self[x1index]], axis=0)
-            x2 = np.concatenate([x2, self[x2index]], axis=0)
-            # sort distance
-            order = np.argsort(x1[:, 1])
-            x1 = x1[order] if self.ascending else x1[order[::-1]]
-            order = np.argsort(x2[:, 1])
-            x2 = x2[order] if self.ascending else x2[order[::-1]]
-            # drop duplicates reads with same position, keep the first one
-            _, index = np.unique(x1[:, 0], return_index=True)
-            x1 = x1[np.sort(index)]
-            _, index = np.unique(x2[:, 0], return_index=True)
-            x2 = x2[np.sort(index)]
-            # save
-            np.save(self.profile.loc[x1index, "feature_path"], x1)
-            np.save(self.profile.loc[x2index, "feature_path"], x2)
-
-        # save profile
+    def add(
+        self, embd_fold: str | list[str], 
+        pval_thresh: float = None, batch_size: int = 10000,
+    ) -> None:
+        # if embd_fold not in self.profile, add to end of self.profile
+        # this step make sure input embd_fold can be indexed in self.profile
+        # since index is used to store and track feature
+        if isinstance(embd_fold, str): embd_fold = [embd_fold]
+        for i in embd_fold:
+            fold = os.path.abspath(i)
+            if fold not in self.profile["embd_fold"].values:
+                self.profile.loc[len(self.profile), "embd_fold"] = fold
         self.profile.to_csv(self.profile_path, index=False)
 
-    def plot(self):
-        feature = self[:]
-        upper = int(np.ceil(feature[0, 1]))
-        lower = int(np.floor(feature[-1, 1]))
+        # since all embd_fold can be indexed in self.profile, transfer input 
+        # embd_fold from str fold path to index in self.profile
+        embd_fold = [self.profile[
+            self.profile["embd_fold"]==os.path.abspath(i)
+        ].index[0] for i in embd_fold]
 
-        # 10%
-        #upper_10 = feature[int(len(feature)*0.1), 1]
-        #plt.axvline(upper_10, color="black", linestyle="--")
-        #plt.text(upper_10+0.1, plt.ylim()[1]*3200, "10%")
-        # 50%
-        #upper_50 = feature[int(len(feature)*0.5), 1]
-        #plt.axvline(upper_50, color="black", linestyle="--")
-        #plt.text(upper_50+0.1, plt.ylim()[1]*3200, "50%")
+        # get all job and run each job by help function self._add
+        jobs = []
+        for i in embd_fold:
+            for j in self.profile.index[:i+1]:
+                for chromosome in [str(i) for i in range(1, 23)] + ["X"]:
+                    job = (i, j, chromosome) if i < j else (j, i, chromosome)
+                    if job not in jobs: jobs.append(job)
+        for job in tqdm.tqdm(
+            jobs, dynamic_ncols=True, unit="job", smoothing=0, desc="add"
+        ): self._add(*job, pval_thresh, batch_size)
 
-        plt.hist(feature[:, 1], bins=10*(upper-lower), color="salmon")
-        plt.xlim(lower, upper)
-        plt.xlabel("Euclidean Distance")
-        plt.ylabel("Number of Features/Positions")
-        plt.show()
+    def _add(
+        self, i: int, j: int, chromosome: str,
+        pval_thresh: float = None, batch_size: int = 10000,
+    ) -> None:
+        x1path = os.path.join(
+            self.feature_fold, f"{i:08}/{j:08}/{chromosome}.npy"
+        )
+        x2path = os.path.join(
+            self.feature_fold, f"{j:08}/{i:08}/{chromosome}.npy"
+        )
 
+        # check if feature already calculated
+        if os.path.exists(x1path) and os.path.exists(x2path): return
+
+        x1embd, x1pos = Selector.getEmbd(
+            self.profile.loc[i, "embd_fold"], chromosome, pval_thresh
+        )
+        x2embd, x2pos = Selector.getEmbd(
+            self.profile.loc[j, "embd_fold"], chromosome, pval_thresh
+        )
+
+        # max distance of x1 and x2
+        x1, x2 = Selector.getMaxDist(x1embd, x2embd, batch_size)
+        # combine pos and distance as feature
+        x1 = np.column_stack((x1pos, x1))
+        x2 = np.column_stack((x2pos, x2))
+        # sort distance
+        order = np.argsort(x1[:, 1])
+        x1 = x1[order[::-1]]
+        order = np.argsort(x2[:, 1])
+        x2 = x2[order[::-1]]
+        # drop duplicates reads with same position, keep the first one
+        _, index = np.unique(x1[:, 0], return_index=True)
+        x1 = x1[np.sort(index)]
+        _, index = np.unique(x2[:, 0], return_index=True)
+        x2 = x2[np.sort(index)]
+
+        # save
+        if not os.path.exists(os.path.dirname(x1path)): 
+            os.makedirs(os.path.dirname(x1path))
+        if not os.path.exists(os.path.dirname(x2path)): 
+            os.makedirs(os.path.dirname(x2path))
+        np.save(x1path, x1)
+        np.save(x2path, x2)
+
+    @staticmethod
+    def getEmbd(
+        embd_fold: str, chromosome: str, pval_thresh: float = None
+    ) -> tuple[np.ndarray, np.ndarray]:
+        # read embd of given path
+        embd = np.load(os.path.join(embd_fold, f"{chromosome}.npy"))
+        # filter read that cover at least one variants with p-value<=pval_thresh
+        if pval_thresh is not None:
+            embd = embd[embd[:, 769-int(np.log10(pval_thresh))]>=1, :]
+        # embd[:, :768] for embedding, embd[:, 768] for pos
+        return embd[:, :768], embd[:, 768]  # (N, 768), (N,)
+
+    @staticmethod
+    def getMaxDist(x1: np.ndarray, x2: np.ndarray, batch_size: int = 10000):
+        x1: torch.Tensor = torch.from_numpy(x1)     # (Ni, D)
+        x2: torch.Tensor = torch.from_numpy(x2)     # (Nj, D)
+
+        x1dist = torch.full((len(x1),), float('-inf'))
+        x2dist = torch.full((len(x2),), float('-inf'))
+
+        x1batchnum = (x1.shape[0] + batch_size - 1) // batch_size
+        x2batchnum = (x2.shape[0] + batch_size - 1) // batch_size
+
+        for i in tqdm.tqdm(range(x1batchnum), leave=False, unit="batch"):
+            start_i = i * batch_size
+            end_i = min(start_i + batch_size, len(x1))
+            x1_batch = x1[start_i:end_i]
+            for j in tqdm.tqdm(range(x2batchnum), leave=False, unit="batch"):
+                start_j = j * batch_size
+                end_j = min(start_j + batch_size, len(x2))
+                x2_batch = x2[start_j:end_j]
+                # compute the distance matrix between x1_batch and x2_batch
+                dist_matrix = torch.cdist(x1_batch, x2_batch)
+                # compute the max distance of current batch
+                x1dist_curr = torch.max(dist_matrix, dim=1).values
+                x2dist_curr = torch.max(dist_matrix, dim=0).values
+                # update the max distances for x1 and x2
+                x1dist[start_i:end_i] = torch.max(x1dist[start_i:end_i], x1dist_curr)
+                x2dist[start_j:end_j] = torch.max(x2dist[start_j:end_j], x2dist_curr)
+
+        return x1dist.numpy(), x2dist.numpy()
+
+    """
     def apply(
         self, embd_path: str, pval_thresh: float = None, 
         top_k: float = 0.1, pos_range = 32, mod: Literal["all", "sep"] = "sep",
@@ -138,18 +188,6 @@ class Selector:
             if e >= len(embd): break
         return embd_selected    # [len(feature), 768]
 
-    @staticmethod
-    def getEmbd(
-        embd_path: str, pval_thresh: float = None
-    ) -> tuple[np.ndarray, np.ndarray]:
-        # read embd of given path
-        embd = np.load(embd_path)
-        # filter read that cover at least one variants with p-value<=pval_thresh
-        if pval_thresh is not None:
-            embd = embd[embd[:, 769-int(np.log10(pval_thresh))]>=1, :]
-        # embd[:, :768] for embedding, embd[:, 768] for pos
-        return embd[:, :768], embd[:, 768]  # (N, 768), (N,)
-
     def __getitem__(self, index: int | slice) -> np.ndarray:
         # feature[:, 0] is pos, feture[:, 1] is distance, sort by distance
         feature = np.zeros([0, 2])
@@ -177,30 +215,4 @@ class Selector:
         # bucket shall also have a distance of bucket width to prevent overlap.
 
         return feature
-
-    def __len__(self) -> int:
-        return len(self.profile)
-
-
-if __name__ == "__main__":
-    feature_fold = "data/feature/"
-    ascending = False   # False for top max distance, True for top min distance
-
-    data_fold = "data/stanford/"
-    method = "pretrain"     # pretrain or finetune
-    chr_list = [str(i) for i in range(1, 23)] + ["X"]   # BAM naming convention
-    pval_thresh = 1e-5
-
-    for chromosome in tqdm.tqdm(
-        chr_list, 
-        dynamic_ncols=True, unit="chr", 
-    ):
-        selector = Selector(os.path.join(feature_fold, chromosome), ascending)
-        for run in tqdm.tqdm(
-            os.listdir(os.path.join(data_fold, f"embd-{method}")),
-            dynamic_ncols=True, unit="run", desc=chromosome, leave=False,
-        ):
-            selector.add(
-                os.path.join(data_fold, f"embd-{method}/{run}/{chromosome}.npy"), 
-                pval_thresh
-            )
+    """

@@ -49,10 +49,10 @@ def seq2embdArgs(parser: argparse.ArgumentParser) -> None:
         "Default: None."
     )
     parser.add_argument(
-        "-p", type=float, required=False, dest="pval_thresh", default=1e-04,
+        "-p", type=float, required=False, dest="pval_thresh", default=1e-03,
         help="P-value threshold for filtering reads, i.e., only keep reads " + 
         "that cover at least one variant with p-value < pval_thresh. " + 
-        "Default: 1e-04."
+        "Default: 1e-03."
     )
     parser.add_argument(
         "-b", type=int, required=False, dest="batch_size", default=100,
@@ -64,7 +64,7 @@ def seq2embdArgs(parser: argparse.ArgumentParser) -> None:
 def seq2embd(
     hdf_load_path: str, embd_save_fold: str, 
     ckpt_load_path: str = None,
-    pval_thresh: float = 1e-04, batch_size: int = 100,
+    pval_thresh: float = 1e-03, batch_size: int = 100,
     *vargs, **kwargs
 ) -> None:
     # model
