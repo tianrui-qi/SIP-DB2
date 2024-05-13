@@ -11,7 +11,9 @@ class Selector:
     def __init__(self, feature_fold: str) -> None:
         # path
         self.feature_fold = feature_fold
-        self.profile_path = os.path.join(feature_fold, "profile.csv")
+        self.addFeature_fold = os.path.join(feature_fold, "addFeature")
+        self.getFeature_fold = os.path.join(feature_fold, "getFeature")
+        self.profile_path    = os.path.join(feature_fold, "profile.csv")
         if not os.path.exists(feature_fold): os.makedirs(feature_fold)
 
         # profile
@@ -21,7 +23,7 @@ class Selector:
             self.profile = pd.DataFrame(columns=["embd_fold"])
             self.profile.to_csv(self.profile_path, index=False)
 
-    def add(
+    def addFeature(
         self, embd_fold: str | list[str], 
         pval_thresh: float = None, batch_size: int = 10000,
     ) -> None:
@@ -41,44 +43,46 @@ class Selector:
             self.profile["embd_fold"]==os.path.abspath(i)
         ].index[0] for i in embd_fold]
 
-        # get all job and run each job by help function self._add
+        # get all job need to be run (i, j, chromosome), i, j are sample index
         jobs = []
         for i in embd_fold:
             for j in self.profile.index[:i+1]:
                 for chromosome in [str(i) for i in range(1, 23)] + ["X"]:
                     job = (i, j, chromosome) if i < j else (j, i, chromosome)
                     if job not in jobs: jobs.append(job)
+        # since we use help function self._addFeature to run each job 
+        # independently, can be modified to parallel in the future
         for job in tqdm.tqdm(
-            jobs, dynamic_ncols=True, unit="job", smoothing=0, desc="add"
-        ): self._add(*job, pval_thresh, batch_size)
+            jobs, dynamic_ncols=True, smoothing=0, unit="job", desc="addFeature"
+        ): self._addFeature(*job, pval_thresh, batch_size)
 
-    def _add(
+    def _addFeature(
         self, i: int, j: int, chromosome: str,
         pval_thresh: float = None, batch_size: int = 10000,
     ) -> None:
         x1path = os.path.join(
-            self.feature_fold, f"{i:08}/{j:08}/{chromosome}.npy"
+            self.addFeature_fold, f"{i:08}/{j:08}/{chromosome}.npy"
         )
         x2path = os.path.join(
-            self.feature_fold, f"{j:08}/{i:08}/{chromosome}.npy"
+            self.addFeature_fold, f"{j:08}/{i:08}/{chromosome}.npy"
         )
 
         # check if feature already calculated
         if os.path.exists(x1path) and os.path.exists(x2path): return
 
-        x1embd, x1pos = Selector.getEmbd(
+        x1embd, x1pos = Selector._getEmbd(
             self.profile.loc[i, "embd_fold"], chromosome, pval_thresh
         )
-        x2embd, x2pos = Selector.getEmbd(
+        x2embd, x2pos = Selector._getEmbd(
             self.profile.loc[j, "embd_fold"], chromosome, pval_thresh
         )
 
         # max distance of x1 and x2
-        x1, x2 = Selector.getMaxDist(x1embd, x2embd, batch_size)
+        x1, x2 = Selector._getMaxDist(x1embd, x2embd, batch_size)
         # combine pos and distance as feature
         x1 = np.column_stack((x1pos, x1))
         x2 = np.column_stack((x2pos, x2))
-        # sort distance
+        # sort by distance
         order = np.argsort(x1[:, 1])
         x1 = x1[order[::-1]]
         order = np.argsort(x2[:, 1])
@@ -98,7 +102,7 @@ class Selector:
         np.save(x2path, x2)
 
     @staticmethod
-    def getEmbd(
+    def _getEmbd(
         embd_fold: str, chromosome: str, pval_thresh: float = None
     ) -> tuple[np.ndarray, np.ndarray]:
         # read embd of given path
@@ -110,7 +114,42 @@ class Selector:
         return embd[:, :768], embd[:, 768]  # (N, 768), (N,)
 
     @staticmethod
-    def getMaxDist(x1: np.ndarray, x2: np.ndarray, batch_size: int = 10000):
+    def _getMaxDist(x1: np.ndarray, x2: np.ndarray, batch_size: int = 10000):
+        """
+        This function is equivalent to max of axis 1, 0 of torch.cdist(x1, x2). 
+        We use some tricks to avoid memory overflow: use torch.cdist to compute 
+        batch_size of x1 and x2 each time, and directly get the max distance of 
+        axis 1 and 0 of the batch distance matrix instead of save matrix in the 
+        memory. 
+
+        To show the function equivalents to torch.cdist,
+            x1 = np.random.rand(25000, 10)
+            x2 = np.random.rand(25000, 10)
+            # torch.cdist
+            dist_matrix = torch.cdist(
+                torch.from_numpy(x1), torch.from_numpy(x2)
+            ).numpy()
+            x1dist_torch = np.max(dist_matrix, axis=1)
+            x2dist_torch = np.max(dist_matrix, axis=0)
+            # Selector.getMaxDist
+            x1dist_our, x2dist_our = getMaxDist(x1, x2)
+            # check if the results are the same
+            print(np.allclose(x1dist_torch, x1dist_our))
+            print(np.allclose(x2dist_torch, x2dist_our))
+        which will print True and True. 
+
+        Args:
+            x1: np.ndarray, shape (Ni, D)
+            x2: np.ndarray, shape (Nj, D)
+            batch_size: int, default 10000
+
+        Returns:
+            x1dist: np.ndarray, shape (Ni,), max distance of axis 1 of Euclidean 
+                distance matrix between x1 and x2
+            x2dist: np.ndarray, shape (Nj,), max distance of axis 0 of Euclidean 
+                distance matrix between x1 and x2
+        """
+
         x1: torch.Tensor = torch.from_numpy(x1)     # (Ni, D)
         x2: torch.Tensor = torch.from_numpy(x2)     # (Nj, D)
 
@@ -120,11 +159,15 @@ class Selector:
         x1batchnum = (x1.shape[0] + batch_size - 1) // batch_size
         x2batchnum = (x2.shape[0] + batch_size - 1) // batch_size
 
-        for i in tqdm.tqdm(range(x1batchnum), leave=False, unit="batch"):
+        for i in tqdm.tqdm(
+            range(x1batchnum), leave=False, unit="batch", dynamic_ncols=True
+        ):
             start_i = i * batch_size
             end_i = min(start_i + batch_size, len(x1))
             x1_batch = x1[start_i:end_i]
-            for j in tqdm.tqdm(range(x2batchnum), leave=False, unit="batch"):
+            for j in tqdm.tqdm(
+                range(x2batchnum), leave=False, unit="batch", dynamic_ncols=True
+            ):
                 start_j = j * batch_size
                 end_j = min(start_j + batch_size, len(x2))
                 x2_batch = x2[start_j:end_j]
@@ -138,6 +181,145 @@ class Selector:
                 x2dist[start_j:end_j] = torch.max(x2dist[start_j:end_j], x2dist_curr)
 
         return x1dist.numpy(), x2dist.numpy()
+
+    def getFeature(
+        self, sample: float | list[int] | list[str] = 1.0, top_k: float = 0.1
+    ) -> dict[str, np.ndarray]:
+        """
+        TODO: store the random select sample in self.profile for future use.
+        add a new column "getFeature" with bool value. Check if load self.profile
+        will goes worry.
+        """
+
+        # get list of sample index we used to get features
+        if isinstance(sample, float):
+            # if input sample is float, random choose part percentage of sample 
+            # in self.profile for feature selection
+            size = int(sample*len(self.profile))
+            sample = self.profile.index.to_list()
+            np.random.shuffle(sample)
+            sample = sample[:size]
+        if isinstance(sample, list) and isinstance(sample[0], str): 
+            # if input sample is list of str, convert to list of index by find 
+            # the str path index in self.profile
+            temp = []
+            for i in sample:
+                path = os.path.abspath(i)
+                if path not in self.profile["embd_fold"].values:
+                    raise ValueError("part contains invalid path")
+                temp.append(
+                    self.profile[self.profile["embd_fold"]==path].index[0]
+                )
+            sample = temp
+        if isinstance(sample, list) and isinstance(sample[0], int):
+            # if input sample is list of int, means it's already list of index, 
+            # check if all index is valid
+            if not all([i in self.profile.index for i in sample]):
+                raise ValueError("part contains invalid index")
+
+        # since we use help function self._getFeature to get the feature of each
+        # chromosome independently, can be modified to parallel in the future
+        feature = {}
+        for chromosome in tqdm.tqdm(
+            [str(i) for i in range(1, 23)] + ["X"], 
+            dynamic_ncols=True, smoothing=0, 
+            unit="chromosome", desc="getFeature"
+        ): feature[chromosome] = self._getFeature(sample, chromosome, top_k)
+
+        return feature
+
+    def _getFeature(
+        self, sample: list[int], chromosome: str, top_k: float = 0.1,
+    ) -> np.ndarray:
+        """
+        Retuen the features of given chromosome, sort by position, by combining
+        the top k percentage features of each sample in input sample index. 
+        We write this help function seperately from self.getFeature for 
+        paralled in the future, i.e., each chromosome can be calculated by
+        seperate thread. 
+
+        TODO: Now some of these features' pos are very close, which may cause
+        problem. Need to solve either by bucketing; with a parameter bucket 
+        width, choose the pos with largest distance in each bucket; each 
+        bucket shall also have a distance of bucket width to prevent overlap.
+
+        Args:
+            sample: list[int]. 
+                List of sample index in self.profile we used to get features.
+            chromosome: str.
+                Which chromosome's feature we will get.
+            top_k: float, default 0.1. 
+                If top_k <= 1, means top_k percentage of features of each sample
+                in input sample index will be combined.
+                If top_k > 1, means top_k number features of each sample in 
+                input sample index will be combined.
+
+        Returns:
+            feature_chromosome: np.ndarray, shape (N, 2).
+                Feature of given chromosome, sort by position, by combining 
+                top k percentage or number of each sample's features in input 
+                sample index.
+                - feature_chromosome[:, 0] is position 
+                - feature_chromosome[:, 1] is distance
+                - N is the feature number of given chromosome
+        """
+
+        # if feature already got before, direct return cached feature
+        path = os.path.join(self.getFeature_fold, f"{chromosome}.npy")
+        if os.path.exists(path): return np.load(path)
+
+        feature_chromosome = np.zeros([0, 2])
+        for i in sample:
+            # get feature_i, (position, distance) of sample_i, sort by position
+            # already removed duplcate position
+            feature_i = None
+            for j in sample:
+                # feature_ij, the distance of each position of sample_i by 
+                # distance matrix between sample_i and sample_j
+                # calculate in self.addFeature, sort by distance, already 
+                # removed duplicate position
+                feature_path = os.path.join(
+                    self.addFeature_fold, f"{i:08}/{j:08}/{chromosome}.npy"
+                )
+                if not os.path.exists(feature_path): continue
+                feature_ij = np.load(feature_path)
+                # sort feature_ij by position so that row/position of feature_ij
+                # for all j are matched
+                feature_ij = feature_ij[feature_ij[:,0].argsort()]
+                # since each row match, we can directly use max distance between
+                # feature_ij and feature_i to update the distance of feature_i
+                if feature_i is None:
+                    feature_i = feature_ij
+                else:
+                    feature_i = np.column_stack([
+                        feature_i[:, 0], 
+                        np.maximum(feature_i[:, 1], feature_ij[:, 1])
+                    ])
+            if feature_i is None: continue
+            # sort by distance and add top_k of feature_i to feature_chromosome
+            index = np.argsort(feature_i[:, 1])
+            index = index[
+                : -int(top_k*len(feature_i)) if top_k <= 1 else -int(top_k) : -1
+            ]
+            feature_chromosome = np.concatenate(
+                [feature_chromosome, feature_i[index]]
+            )
+        # sort by distance
+        order = np.argsort(feature_chromosome[:, 1])
+        feature_chromosome = feature_chromosome[order[::-1]]
+        # drop duplicates reads with same position, keep the first one
+        _, index = np.unique(feature_chromosome[:, 0], return_index=True)
+        feature_chromosome = feature_chromosome[np.sort(index)]
+        # sort by position
+        order = np.argsort(feature_chromosome[:, 0])
+        feature_chromosome = feature_chromosome[order]
+
+        # cache feature for future use
+        if not os.path.exists(os.path.dirname(path)):
+            os.makedirs(os.path.dirname(path))
+        np.save(path, feature_chromosome)
+
+        return feature_chromosome   # [N, 2]
 
     """
     def apply(
@@ -187,32 +369,4 @@ class Selector:
                 e_temp += 1
             if e >= len(embd): break
         return embd_selected    # [len(feature), 768]
-
-    def __getitem__(self, index: int | slice) -> np.ndarray:
-        # feature[:, 0] is pos, feture[:, 1] is distance, sort by distance
-        feature = np.zeros([0, 2])
-        if isinstance(index, slice):
-            # concat selected features of all runs
-            feature = np.zeros([0, 2])
-            for i in range(*index.indices(len(self.profile))):
-                feature_path = self.profile.loc[i, "feature_path"]
-                if os.path.exists(feature_path): feature = np.concatenate(
-                    [feature, np.load(feature_path)], axis=0
-                )
-            # sort distance
-            order = np.argsort(feature[:, 1])
-            feature = feature[order] if self.ascending else feature[order[::-1]]
-            # drop duplicates reads with same position, keep the first one
-            _, index = np.unique(feature[:, 0], return_index=True)
-            feature = feature[np.sort(index)]
-        if isinstance(index, int) and index >= 0 and index < len(self.profile):
-            feature_path = self.profile.loc[index, "feature_path"]
-            if os.path.exists(feature_path): feature = np.load(feature_path)
-
-        # TODO: now some of these features' pos are very close, which may cause
-        # problem. Need to solve either by bucketing; with a parameter bucket 
-        # width, choose the pos with largest distance in each bucket; each 
-        # bucket shall also have a distance of bucket width to prevent overlap.
-
-        return feature
     """
