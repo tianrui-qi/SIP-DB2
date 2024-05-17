@@ -5,6 +5,8 @@ import pandas as pd
 
 import os
 import tqdm
+import functools
+import multiprocessing
 
 
 __all__ = ["Selector"]
@@ -24,18 +26,6 @@ class Selector:
         else:
             self.profile = pd.DataFrame(columns=["embd_fold"])
             self.profile.to_csv(self.profile_path, index=False)
-
-    @staticmethod
-    def getEmbd(
-        embd_fold: str, chromosome: str, pval_thresh: float = None
-    ) -> tuple[np.ndarray, np.ndarray]:
-        # read embd of given path
-        embd = np.load(os.path.join(embd_fold, f"{chromosome}.npy"))
-        # filter read that cover at least one variants with p-value<=pval_thresh
-        if pval_thresh is not None:
-            embd = embd[embd[:, 769-int(np.log10(pval_thresh))]>=1, :]
-        # embd[:, :768] for embedding, embd[:, 768] for pos
-        return embd[:, :768], embd[:, 768]  # (N, 768), (N,)
 
     """ addFeature """
 
@@ -84,12 +74,10 @@ class Selector:
         # check if feature already calculated
         if os.path.exists(x1path) and os.path.exists(x2path): return
 
-        x1embd, x1pos = Selector.getEmbd(
-            self.profile.loc[i, "embd_fold"], chromosome
-        )
-        x2embd, x2pos = Selector.getEmbd(
-            self.profile.loc[j, "embd_fold"], chromosome
-        )
+        x1fold = self.profile.loc[i, "embd_fold"]
+        x1embd, x1pos = Selector.getEmbd(x1fold, chromosome)
+        x2fold = self.profile.loc[j, "embd_fold"]
+        x2embd, x2pos = Selector.getEmbd(x2fold, chromosome)
 
         # max distance of x1 and x2
         x1, x2 = Selector.getMaxDist(x1embd, x2embd, batch_size)
@@ -114,6 +102,193 @@ class Selector:
             os.makedirs(os.path.dirname(x2path))
         np.save(x1path, x1)
         np.save(x2path, x2)
+
+    """ getFeature """
+
+    def getFeature(
+        self, bin_size: int = 100, top_k: float = 0.1
+    ) -> dict[str, np.ndarray]:
+        # get feature for each chromosome and save in disk by calling
+        # self.getFeatureChr in multiprocessing
+        with multiprocessing.Pool() as pool:
+            for _ in tqdm.tqdm(
+                pool.imap_unordered(
+                    functools.partial(
+                        self.getFeatureChr, bin_size=bin_size, top_k=top_k
+                    ),[str(i) for i in range(1, 23)] + ["X"]
+                ),
+                total=23, dynamic_ncols=True, smoothing=0, 
+                unit="chromosome", desc="getFeature"
+            ): pass
+        # return all chromosome feature as dict by load from disk
+        return {
+            chromosome: np.load(
+                os.path.join(self.getFeature_fold, f"{chromosome}.npy")
+            ) for chromosome in [str(i) for i in range(1, 23)] + ["X"]
+        }
+
+    def getFeatureChr(
+        self, chromosome: str, bin_size: int = 100, top_k: float = 0.1
+    ) -> np.ndarray:
+        # if feature already got before, direct return cached feature
+        path = os.path.join(self.getFeature_fold, f"{chromosome}.npy")
+        if os.path.exists(path): return np.load(path)
+
+        feature = np.zeros([0, 2])  # (position, distance)
+        for i in self.profile.index:
+            for j in self.profile.index:
+                # feature_ij, the distance of each position of sample_i by 
+                # distance matrix between sample_i and sample_j
+                # calculate in self.addFeature, sort by distance, already 
+                # removed duplicate position
+                feature_ij_path = os.path.join(
+                    self.addFeature_fold, f"{i:08}/{j:08}/{chromosome}.npy"
+                )
+                if not os.path.exists(feature_ij_path): continue
+                feature_ij = np.load(feature_ij_path)
+
+                # check if bucket size enough, extend if not
+                bins_new = int(max(feature_ij[:, 0]) // bin_size) + 1
+                bins_cur = len(feature)
+                if bins_new > bins_cur:
+                    extend = np.zeros((bins_new - bins_cur, 2))
+                    extend[:, 0] = (np.arange(bins_cur, bins_new)+0.5)*bin_size
+                    feature = np.concatenate([feature, extend])
+
+                # let the third column of feature_ij be the bucket index
+                feature_ij = np.column_stack([
+                    feature_ij, (feature_ij[:, 0] // bin_size)
+                ])
+                # remove duplicate bucket_index and keep the first one
+                # note that feature_ij sorted by distance, so by keep the first
+                # one, we keep the row with largest distance for each bucket
+                _, unique_index = np.unique(feature_ij[:, 2], return_index=True)
+                feature_ij = feature_ij[unique_index]
+                # for each feature, put it into corresponding bucket if that 
+                # feature's distance is larger than the distance store in bucket
+                feature_ij, bucket_index = feature_ij[:, 0:2], feature_ij[:, 2]
+                bucket_index = bucket_index.astype(int)
+                valid = feature_ij[:, 1] > feature[bucket_index, 1]
+                feature[bucket_index[valid]] = feature_ij[valid]
+
+        # transfer top_k into number of features we want to keep
+        top_k = int(top_k*len(feature)) if top_k <= 1 else int(top_k)
+        # remove row in feature that distance is 0
+        feature = feature[feature[:, 1] != 0]
+        # sort by distance
+        feature = feature[np.argsort(feature[:, 1])[::-1]]
+        # keep top_k percentage or number of features
+        feature = feature[:top_k]
+        # sort by position
+        feature = feature[np.argsort(feature[:, 0])]
+
+        # cache feature for future use
+        if not os.path.exists(os.path.dirname(path)):
+            os.makedirs(os.path.dirname(path))
+        np.save(path, feature)
+
+        return feature   # [K, (position, distance)]
+
+    """ applyFeature """
+
+    def applyFeature(self, embd_fold: str, pos_range: int = 25) -> np.ndarray:
+        """
+        TODO: parallelize chromosome
+        """
+        return np.concatenate([
+            self.applyFeatureChr(embd_fold, chromosome, pos_range)
+            for chromosome in tqdm.tqdm(
+                [str(i) for i in range(1, 23)] + ["X"],
+                dynamic_ncols=True, smoothing=0, 
+                unit="chromosome", desc="applyFeature"
+            )
+        ], axis=0)
+
+    def applyFeatureChr(
+        self, embd_fold: str, chromosome: str, pos_range: int = 25
+    ) -> np.ndarray:
+        """
+        TODO: If embd_fold in self.profile, save the result in disk for future
+        use of fit.
+        """
+
+        # feature of given chromosome, sort by position, 
+        # only keep the position column
+        path = os.path.join(self.getFeature_fold, f"{chromosome}.npy")
+        if not os.path.exists(path): raise FileNotFoundError(
+            f"Chromosome {chromosome} feature not found." + 
+            "Please run getFeature or getFeatureChr first."
+        )
+        feature = self.getFeatureChr(chromosome)[:, 0]  # [Kc,]
+
+        embd, pos = Selector.getEmbd(embd_fold, chromosome)
+        embd_selected = np.full((len(feature), 768), np.nan)
+        e = 0   # index for embd
+        for p in range(len(feature)):
+            # move e to the first read that is larger than feature[p]-pos_range
+            # note that both pos and feature are sorted, so for next p, we can 
+            # directly start from previous e
+            while e < len(embd) and pos[e] < feature[p]-pos_range: e += 1
+            if e >= len(embd): break
+            # if first read that larger than feature[p]-pos_range is also larger 
+            # than feature[p]+pos_range, then we have no read in this range, set 
+            # the embd of this pos to nan; 
+            if pos[e] > feature[p]+pos_range: continue
+            # if first read that larger than feature[p]-pos_range smaller than 
+            # feature[p]+pos_range, get the reads that closest to feature[p]
+            e_temp = e
+            distance = pos_range
+            while e_temp < len(embd) and pos[e_temp] <= feature[p]+pos_range:
+                if abs(pos[e_temp] - feature[p]) <= distance:
+                    distance = abs(pos[e_temp] - feature[p])
+                    embd_selected[p] = embd[e_temp, :]
+                e_temp += 1
+            if e >= len(embd): break
+
+        return embd_selected    # [Kc, 768]
+
+    """ getRepresentation """
+
+    def getRepresentation():
+        """
+        TODO: run fit and transform
+        """
+        pass
+
+    def fit():
+        """
+        TODO:
+        1. check if pca and mean already stored in folder pca
+        2. run applyFeature for sample in self.profile
+        3. get the mean of all not nan part
+        4. store the mean in folder pca for future use
+        5. replace nan with mean
+        6. run pca on all embd, store pca in folder pca for future use
+        """
+        pass
+
+    def transform():
+        """
+        TODO:
+        1. check if pca and mean already stored in folder pca
+        2. run applyFeature for input embd_fold
+        3. replace nan with mean and transform with pca
+        """
+        pass
+
+    """ help function """
+
+    @staticmethod
+    def getEmbd(
+        embd_fold: str, chromosome: str, pval_thresh: float = None
+    ) -> tuple[np.ndarray, np.ndarray]:
+        # read embd of given path
+        embd = np.load(os.path.join(embd_fold, f"{chromosome}.npy"))
+        # filter read that cover at least one variants with p-value<=pval_thresh
+        if pval_thresh is not None:
+            embd = embd[embd[:, 769-int(np.log10(pval_thresh))]>=1, :]
+        # embd[:, :768] for embedding, embd[:, 768] for pos
+        return embd[:, :768], embd[:, 768]  # (N, 768), (N,)
 
     @staticmethod
     def getMaxDist(
@@ -190,219 +365,12 @@ class Selector:
 
         return x1dist.numpy(), x2dist.numpy()
 
-    """ getFeature """
-
-    def getFeature(self, top_k: float = 0.1) -> dict[str, np.ndarray]:
-        """
-        Args:
-            top_k: float, default 0.1
-                -   If top_k <= 1, means top_k percentage of features of each 
-                    sample in input sample index will be combined.
-                -   If top_k >  1, means top_k number features of each sample in 
-                    input sample index will be combined.
-                -   If top_k is None, means simply load and return cached 
-                    feature. Raise error if feature not exist in disk, i.e., 
-                    self.getFeature not run with top_k set before.
-        
-        Returns:
-            feature: dict[str, np.ndarray]
-                -   Key is chromosome, from "1" to "22" and "X". 
-                -   Value is feature of each chromosome, sort by position, 
-                    getting by function self.getFeatureChr(chromosome, top_k). 
-                    Check documentation of self.getFeatureChr for more details.
-
-        Raises:
-            FileNotFoundError: 
-                If top_k is None and feature of any chromosome not exist in 
-                disk, i.e., self.getFeature not run with top_k set before.
-        """
-        return {
-            chromosome: self.getFeatureChr(chromosome, top_k)
-            for chromosome in tqdm.tqdm(
-                [str(i) for i in range(1, 23)] + ["X"], 
-                dynamic_ncols=True, smoothing=0, 
-                unit="chromosome", desc="getFeature"
-            )
-        }
-
-    def getFeatureChr(self, chromosome: str, top_k: float = 0.1) -> np.ndarray:
-        """
-        Args:
-            chromosome: str
-                The chromosome's feature we will get.
-            top_k: float, default 0.1
-                -   If top_k <= 1, means top_k percentage of features of each 
-                    sample in input sample index will be combined.
-                -   If top_k >  1, means top_k number features of each sample in 
-                    input sample index will be combined.
-                -   If top_k is None, means simply load and return cached 
-                    feature. Raise error if feature not exist in disk, i.e., 
-                    self.getFeatureChr not run with top_k set before.
-
-        Returns:
-            feature_chromosome: np.ndarray, shape (Kc, 2)
-                Feature of given chromosome, sort by position, by combining 
-                top k percentage or number of each sample's features in 
-                self.profile.
-                - feature_chromosome[:, 0] is position 
-                - feature_chromosome[:, 1] is distance
-                - Kc is the feature number of given chromosome
-
-        Raises:
-            FileNotFoundError: 
-                If top_k is None and feature of given chromosome not exist in 
-                disk, i.e., self.getFeatureChr not run with top_k set before.
-
-        TODO: Now some of these features' pos are very close, which may cause
-        problem. Need to solve either by bucketing; with a parameter bucket 
-        width, choose the pos with largest distance in each bucket; each 
-        bucket shall also have a distance of bucket width to prevent overlap.
-        """
-
-        # if feature already got before, direct return cached feature
-        path = os.path.join(self.getFeature_fold, f"{chromosome}.npy")
-        if os.path.exists(path): return np.load(path)
-        # if top_k == None, simply load and return cached feature, which !exist
-        if top_k is None:
-            raise FileNotFoundError(
-                f"Feature of chromosome {chromosome} not exist. " + 
-                "Run self.getFeature or self.getFeatureChr with top_k set."
-            )
-
-        feature_chromosome = np.zeros([0, 2])
-        for i in tqdm.tqdm(
-            self.profile.index, leave=False, unit="sample", dynamic_ncols=True
-        ):
-            # get feature_i, (position, distance) of sample_i, sort by position
-            # already removed duplcate position
-            feature_i = None
-            for j in self.profile.index:
-                # feature_ij, the distance of each position of sample_i by 
-                # distance matrix between sample_i and sample_j
-                # calculate in self.addFeature, sort by distance, already 
-                # removed duplicate position
-                feature_path = os.path.join(
-                    self.addFeature_fold, f"{i:08}/{j:08}/{chromosome}.npy"
-                )
-                if not os.path.exists(feature_path): continue
-                feature_ij = np.load(feature_path)
-                # sort feature_ij by position so that row/position of feature_ij
-                # for all j are matched
-                feature_ij = feature_ij[feature_ij[:,0].argsort()]
-                # since each row match, we can directly use max distance between
-                # feature_ij and feature_i to update the distance of feature_i
-                if feature_i is None:
-                    feature_i = feature_ij
-                else:
-                    feature_i = np.column_stack([
-                        feature_i[:, 0], 
-                        np.maximum(feature_i[:, 1], feature_ij[:, 1])
-                    ])
-            if feature_i is None: continue
-            # sort by distance and add top_k of feature_i to feature_chromosome
-            index = np.argsort(feature_i[:, 1])
-            index = index[
-                : -int(top_k*len(feature_i)) if top_k <= 1 else -int(top_k) : -1
-            ]
-            feature_chromosome = np.concatenate(
-                [feature_chromosome, feature_i[index]]
-            )
-        # sort by distance
-        order = np.argsort(feature_chromosome[:, 1])
-        feature_chromosome = feature_chromosome[order[::-1]]
-        # drop duplicates reads with same position, keep the first one
-        _, index = np.unique(feature_chromosome[:, 0], return_index=True)
-        feature_chromosome = feature_chromosome[np.sort(index)]
-        # sort by position
-        order = np.argsort(feature_chromosome[:, 0])
-        feature_chromosome = feature_chromosome[order]
-
-        # cache feature for future use
-        if not os.path.exists(os.path.dirname(path)):
-            os.makedirs(os.path.dirname(path))
-        np.save(path, feature_chromosome)
-
-        return feature_chromosome   # [Kc, 2]
-
-    """ applyFeature """
-
-    def applyFeature(self, embd_fold: str, pos_range: int) -> np.ndarray:
-        return np.concatenate([
-            self.applyFeatureChr(embd_fold, chromosome, pos_range)
-            for chromosome in tqdm.tqdm(
-                [str(i) for i in range(1, 23)] + ["X"],
-                dynamic_ncols=True, smoothing=0, 
-                unit="chromosome", desc="applyFeature"
-            )
-        ], axis=0)
-
-    def applyFeatureChr(
-        self, embd_fold: str, chromosome: str, pos_range: int
-    ) -> np.ndarray:
-        """
-        TODO: Support save the result to disk. Check if there are result in 
-        disk first before applyFeatureChr. If exist, skip.
-        TODO: Support input bam_path and set pos_range automatically using 
-        read-lens / 4
-        """
-
-        # feature of given chromosome, sort by position, 
-        # only keep the position column
-        # top_k=None means simply load and get cached feature, raise error if
-        # self.getFeatureChr not run with top_k set before
-        feature = self.getFeatureChr(chromosome, top_k=None)[:, 0]  # [Kc,]
-
-        embd, pos = Selector.getEmbd(embd_fold, chromosome)
-        embd_selected = np.full((len(feature), 768), np.nan)
-        e = 0   # index for embd
-        for p in range(len(feature)):
-            # move e to the first read that is larger than feature[p]-pos_range
-            # note that both pos and feature are sorted, so for next p, we can 
-            # directly start from previous e
-            while e < len(embd) and pos[e] < feature[p]-pos_range: e += 1
-            if e >= len(embd): break
-            # if first read that larger than feature[p]-pos_range is also larger 
-            # than feature[p]+pos_range, then we have no read in this range, set 
-            # the embd of this pos to nan; 
-            if pos[e] > feature[p]+pos_range: continue
-            # if first read that larger than feature[p]-pos_range smaller than 
-            # feature[p]+pos_range, get the reads that closest to feature[p]
-            e_temp = e
-            distance = pos_range
-            while e_temp < len(embd) and pos[e_temp] <= feature[p]+pos_range:
-                if abs(pos[e_temp] - feature[p]) <= distance:
-                    distance = abs(pos[e_temp] - feature[p])
-                    embd_selected[p] = embd[e_temp, :]
-                e_temp += 1
-            if e >= len(embd): break
-
-        return embd_selected    # [Kc, 768]
-
-    """ getRepresentation """
-
-    def getRepresentation():
-        """
-        TODO: run fit and transform
-        """
-        pass
-
-    def fit():
-        """
-        TODO:
-        1. check if pca and mean already stored in folder pca
-        2. run applyFeature for sample in self.profile
-        3. get the mean of all not nan part
-        4. store the mean in folder pca for future use
-        5. replace nan with mean
-        6. run pca on all embd, store pca in folder pca for future use
-        """
-        pass
-
-    def transform():
-        """
-        TODO:
-        1. check if pca and mean already stored in folder pca
-        2. run applyFeature for input embd_fold
-        3. replace nan with mean and transform with pca
-        """
-        pass
+    @staticmethod
+    def getPearsonCorrelation(x1: np.ndarray, x2: np.ndarray) -> np.ndarray:
+        x1centered = x1 - x1.mean(axis=1, keepdims=True)        # (N1, 768)
+        x2centered = x2 - x2.mean(axis=1, keepdims=True)        # (N2, 768)
+        numerator = np.dot(x1centered, x2centered.T)            # (N1, N2)
+        x1var = np.sum(x1centered**2, axis=1, keepdims=True)    # (N1,  1)
+        x2var = np.sum(x2centered**2, axis=1, keepdims=True)    # (N2,  1)
+        denominator = np.sqrt(np.dot(x1var, x2var.T))           # (N1, N2)
+        return numerator / denominator                          # (N1, N2)
