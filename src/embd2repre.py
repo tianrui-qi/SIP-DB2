@@ -53,6 +53,16 @@ class Selector:
         for i in embd_fold:
             for j in self.profile.index[:i+1]:
                 for chromosome in [str(i) for i in range(1, 23)] + ["X"]:
+                    # check if feature already calculated
+                    x1path = os.path.join(
+                        self.addFeature_fold, f"{i:08}/{j:08}/{chromosome}.npy"
+                    )
+                    x2path = os.path.join(
+                        self.addFeature_fold, f"{j:08}/{i:08}/{chromosome}.npy"
+                    )
+                    if os.path.exists(x1path) and os.path.exists(x2path): 
+                        continue
+                    # add to jobs list if not in jobs list
                     job = (i, j, chromosome) if i < j else (j, i, chromosome)
                     if job not in jobs: jobs.append(job)
         # since we use help function self.addFeatureJob to run each job 
@@ -115,24 +125,25 @@ class Selector:
                 pool.imap_unordered(
                     functools.partial(
                         self.getFeatureChr, bin_size=bin_size, top_k=top_k
-                    ),[str(i) for i in range(1, 23)] + ["X"]
+                    ), [str(i) for i in range(1, 23)] + ["X"]
                 ),
                 total=23, dynamic_ncols=True, smoothing=0, 
                 unit="chromosome", desc="getFeature"
             ): pass
         # return all chromosome feature as dict by load from disk
         return {
-            chromosome: np.load(
-                os.path.join(self.getFeature_fold, f"{chromosome}.npy")
-            ) for chromosome in [str(i) for i in range(1, 23)] + ["X"]
+            chromosome: self.getFeatureChrCached(chromosome, top_k, verbose=1) 
+            for chromosome in [str(i) for i in range(1, 23)] + ["X"]
         }
 
     def getFeatureChr(
         self, chromosome: str, bin_size: int = 100, top_k: float = 0.1
     ) -> np.ndarray:
-        # if feature already got before, direct return cached feature
+        # if feature already got before, return feature that only keep top_k 
+        # percentage of features
         path = os.path.join(self.getFeature_fold, f"{chromosome}.npy")
-        if os.path.exists(path): return np.load(path)
+        if os.path.exists(path): 
+            return self.getFeatureChrCached(chromosome, top_k)
 
         feature = np.zeros([0, 2])  # (position, distance)
         for i in self.profile.index:
@@ -171,23 +182,51 @@ class Selector:
                 valid = feature_ij[:, 1] > feature[bucket_index, 1]
                 feature[bucket_index[valid]] = feature_ij[valid]
 
+        # cache feature for future use
+        if not os.path.exists(os.path.dirname(path)):
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+        np.save(path, feature)
+
+        # return feature that only keep top_k percentage of features
+        return self.getFeatureChrCached(chromosome, top_k)
+
+    def getFeatureChrCached(
+        self, chromosome: str, top_k: float = 0.1, verbose: bool = False,
+    ) -> np.ndarray:
+        # load cached feature
+        path = os.path.join(self.getFeature_fold, f"{chromosome}.npy")
+        if not os.path.exists(path): raise FileNotFoundError(
+            f"Chromosome {chromosome} feature not found." + 
+            "Please run getFeature or getFeatureChr first."
+        )
+        feature = np.load(path)
+        feature_total = len(feature)    # record
         # transfer top_k into number of features we want to keep
         top_k = int(top_k*len(feature)) if top_k <= 1 else int(top_k)
         # remove row in feature that distance is 0
         feature = feature[feature[:, 1] != 0]
+        feature_nonzero = len(feature)  # record
         # sort by distance
         feature = feature[np.argsort(feature[:, 1])[::-1]]
+        feature_min = feature[0, 1]     # record
+        feature_max = feature[0, 1]     # record
         # keep top_k percentage or number of features
         feature = feature[:top_k]
         # sort by position
         feature = feature[np.argsort(feature[:, 0])]
 
-        # cache feature for future use
-        if not os.path.exists(os.path.dirname(path)):
-            os.makedirs(os.path.dirname(path))
-        np.save(path, feature)
+        if verbose: print(
+            "Chromosome {}\t".format(chromosome) +
+            f"min {feature_min:.2f} max {feature_max:.2f}\t" + 
+            f"total {feature_total:>{10},}\t" +
+            f"nonzero {feature_nonzero:>{10},}\t" +
+            f"selected {len(feature):>{10},}\t" + 
+            f"nonzero/total {feature_nonzero*100/feature_total:.2f}%\t" + 
+            f"selected/total {len(feature)*100/feature_total:.2f}%\t" +
+            f"selected/nonzero {len(feature)*100/feature_nonzero:.2f}%"
+        )
 
-        return feature   # [K, (position, distance)]
+        return feature  # [K, (position, distance)]
 
     """ applyFeature """
 
@@ -331,11 +370,13 @@ class Selector:
                 and x2
         """
 
-        x1: torch.Tensor = torch.from_numpy(x1)     # (Ni, D)
-        x2: torch.Tensor = torch.from_numpy(x2)     # (Nj, D)
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        x1dist = torch.full((len(x1),), float('-inf'))
-        x2dist = torch.full((len(x2),), float('-inf'))
+        x1: torch.Tensor = torch.from_numpy(x1).to(device)     # (Ni, D)
+        x2: torch.Tensor = torch.from_numpy(x2).to(device)     # (Nj, D)
+
+        x1dist = torch.full((len(x1),), float('-inf'), device=device)
+        x2dist = torch.full((len(x2),), float('-inf'), device=device)
 
         x1batchnum = (x1.shape[0] + batch_size - 1) // batch_size
         x2batchnum = (x2.shape[0] + batch_size - 1) // batch_size
@@ -346,9 +387,7 @@ class Selector:
             start_i = i * batch_size
             end_i = min(start_i + batch_size, len(x1))
             x1_batch = x1[start_i:end_i]
-            for j in tqdm.tqdm(
-                range(x2batchnum), leave=False, unit="batch", dynamic_ncols=True
-            ):
+            for j in range(x2batchnum):
                 start_j = j * batch_size
                 end_j = min(start_j + batch_size, len(x2))
                 x2_batch = x2[start_j:end_j]
@@ -363,7 +402,7 @@ class Selector:
                     x2dist[start_j:end_j], torch.max(dist_matrix, dim=0).values
                 )
 
-        return x1dist.numpy(), x2dist.numpy()
+        return x1dist.cpu().numpy(), x2dist.cpu().numpy()
 
     @staticmethod
     def getPearsonCorrelation(x1: np.ndarray, x2: np.ndarray) -> np.ndarray:
