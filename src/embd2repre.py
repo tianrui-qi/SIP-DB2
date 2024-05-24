@@ -4,6 +4,7 @@ import numpy as np
 import scipy.spatial.distance
 
 import os
+import h5py
 import tqdm
 import functools
 import multiprocessing
@@ -19,7 +20,8 @@ class Selector:
     """ addFeature """
 
     def addFeatureChr(
-        self, chromosome: str, bucket_size: int, embd_folds: str | list[str], 
+        self, chromosome: str, chunk_size: int, bucket_size: int,
+        embd_folds: str | list[str], 
         processes: int = None
     ) -> None:
         if isinstance(embd_folds, str): embd_folds = [embd_folds]
@@ -27,75 +29,108 @@ class Selector:
             embd_folds, dynamic_ncols=True, smoothing=0, position=0,
             unit="sample", desc=f"chromosome {chromosome}"
         ):
-            # get the embd and position, sorted by position
+            # embd and pos, sort by pos
             embd, pos = Selector.getEmbd(embd_fold, chromosome)
-            # get bucket index and each bucket index's start embd index
-            idx_bucket, idx_embd = np.unique(pos//bucket_size, return_index=1)
-            idx_bucket = idx_bucket.tolist()
-            idx_embd = np.append(idx_embd, len(embd))
-            # split embd by process and bucket index
-            if processes is None: processes = multiprocessing.cpu_count()
-            else: processes = min(processes, multiprocessing.cpu_count())
-            buckets_processes = []
-            for p in range(processes):
-                # start and end of bucket index for each process
-                i = p * (len(idx_bucket)//processes)
-                if p == processes-1: j = len(idx_bucket)
-                else: j = (p+1) * (len(idx_bucket)//processes)
-                # input of each process: paths and embds
-                buckets_path = [
-                    os.path.join(
-                        self.feature_fold, chromosome, 
-                        f"{idx_bucket[b]:08}.npy"
-                    ) for b in range(i, j)
-                ]
-                buckets_embd = [
-                    embd[idx_embd[b]:idx_embd[b+1]] for b in range(i, j)
-                ]
-                buckets_processes.append((buckets_path, buckets_embd, p))
-            # process buckets in parallel by process
-            with multiprocessing.Pool(processes=processes) as pool: list(
-                pool.imap(Selector.addFeatureBucketsWrapper, buckets_processes)
+            # chunk index
+            chunk, chunk2pos = np.unique(
+                pos//(chunk_size*bucket_size), return_index=True
             )
+            chunk2pos = np.append(chunk2pos, len(pos))
+            # split pos and embd by chunk
+            chunk_pos = [
+                pos[chunk2pos[c]:chunk2pos[c+1]] for c in range(len(chunk))
+            ]
+            chunk_embd = [
+                embd[chunk2pos[c]:chunk2pos[c+1]] for c in range(len(chunk))
+            ]
+            # check if directory of saving result exists
+            os.makedirs(os.path.join(self.feature_fold, chromosome), exist_ok=1)
+            # process each chunk
+            jobs = [
+                (chromosome, chunk[c], bucket_size, chunk_pos[c], chunk_embd[c]) 
+                for c in range(len(chunk))
+            ]
+            with multiprocessing.Pool(processes=processes) as pool:
+                list(tqdm.tqdm(
+                    pool.imap(self.addFeatureChunkWrapper, jobs), 
+                    total=len(jobs), dynamic_ncols=1, smoothing=0, leave=0,
+                    desc=embd_fold, unit="chunk",
+                ))
 
-    @staticmethod
-    def addFeatureBucketsWrapper(
-        buckets: tuple[list[str], list[np.ndarray], int]
-    ) -> None: return Selector.addFeatureBuckets(*buckets)
+    def addFeatureChunkWrapper(self, args: tuple) -> None:
+        self.addFeatureChunk(*args)
 
-    @staticmethod
-    def addFeatureBuckets(
-        paths: list[str], embds: list[np.ndarray], p: int
+    def addFeatureChunk(
+        self, chromosome: str, chunk: int, bucket_size: int,
+        pos: np.ndarray, embd: np.ndarray,
     ) -> None:
-        for b in tqdm.tqdm(
-            range(len(paths)), dynamic_ncols=True, smoothing=0, position=p+1, 
-            unit="bucket", desc=f"process {p}", leave=False
-        ):
-            # get feature, embd[:, :768] distance [:, 768]
-            if os.path.exists(paths[b]): feature = np.load(paths[b])
-            else: feature = np.zeros([0, 769], dtype=np.float32)
-            # add embd to end of feature where distance is 0
-            feature = np.concatenate([
-                feature, 
-                np.column_stack(
-                    (embds[b], np.zeros(len(embds[b]), dtype=np.float32))
-                )
-            ])
-            # get max distance
-            dist = np.max(
-                #torch.cdist(
-                #    torch.from_numpy(embds[b]), 
-                #    torch.from_numpy(feature[:, :768])
-                #).numpy(),
-                scipy.spatial.distance.cdist(embds[b], feature[:, :768]), 
-                #Selector.getEuclideanDistance(embds[b], feature[:, :768]), 
-                axis=0
+        # bucket index
+        bucket, bucket2pos = np.unique(pos//bucket_size, return_index=True)
+        bucket2pos = np.append(bucket2pos, len(embd))
+        # split embd by bucket
+        bucket_embd = [
+            embd[bucket2pos[b]:bucket2pos[b+1]] for b in range(len(bucket))
+        ]
+        # process each bucket
+        for b in range(len(bucket)):
+            self.addFeatureBucket(
+                chromosome, chunk, bucket[b], bucket_embd[b]
             )
-            feature[:, 768] = np.maximum(feature[:, 768], dist)
-            # save
-            if not os.path.exists(os.path.dirname(paths[b])): 
-                os.makedirs(os.path.dirname(paths[b]), exist_ok=True)
-            np.save(paths[b], feature)
+
+    def addFeatureBucket(
+        self, chromosome: str, chunk: int, bucket: int, embd: np.ndarray
+    ) -> None:
+        path = os.path.join(self.feature_fold, chromosome, f"c{chunk:05}.hdf5")
+        key  = f"b{bucket:08}"
+        
+        with h5py.File(path, 'a') as h5f:
+            if key in h5f:
+                # get feature
+                feature = h5f[key]
+                feature_old = feature[:, :]
+                len_old = len(feature_old)
+                feature_new = np.concatenate([
+                    feature_old, 
+                    np.column_stack(
+                        (embd, np.zeros(len(embd), dtype=np.float32))
+                    )
+                ])
+                len_new = len(feature_new)                
+                # get max distance
+                dist = np.max(
+                    #torch.cdist(
+                    #    torch.from_numpy(embd), 
+                    #    torch.from_numpy(feature[:, :768])
+                    #).numpy(),
+                    scipy.spatial.distance.cdist(embd, feature_new[:, :768]), 
+                    #Selector.getEuclideanDistance(embd, feature[:, :768]), 
+                    axis=0
+                )
+                feature_new[:, 768] = dist
+                # save
+                feature.resize((len_new, 769))
+                feature[len_old:] = feature_new[len_old:]
+                feature[:len_old, 768] = feature_new[:len_old, 768]
+            else:
+                # get feature
+                feature_new = np.column_stack(
+                    (embd, np.zeros(len(embd), dtype=np.float32))
+                )
+                # get max distance
+                dist = np.max(
+                    #torch.cdist(
+                    #    torch.from_numpy(embd), 
+                    #    torch.from_numpy(feature[:, :768])
+                    #).numpy(),
+                    scipy.spatial.distance.cdist(embd, feature_new[:, :768]), 
+                    #Selector.getEuclideanDistance(embd, feature[:, :768]), 
+                    axis=0
+                )
+                feature_new[:, 768] = dist
+                # save
+                h5f.create_dataset(
+                    key, data=feature_new, maxshape=(None, 769), chunks=True
+                )
 
     """ getFeature """
 

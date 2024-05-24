@@ -85,6 +85,7 @@ dependencies:
   - gstreamer=1.14.1=h5eee18b_1
   - h11=0.14.0=pyhd8ed1ab_0
   - h2=4.1.0=pyhd8ed1ab_0
+  - h5py=3.11.0=nompi_py310hf054cd7_101
   - hdf5=1.14.3=nompi_h4f84152_100
   - hpack=4.0.0=pyh9f0ad1d_0
   - httpcore=1.0.4=pyhd8ed1ab_0
