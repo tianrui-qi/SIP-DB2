@@ -1,7 +1,7 @@
 import torch
 
 import numpy as np
-import pandas as pd
+import scipy.spatial.distance
 
 import os
 import tqdm
@@ -14,104 +14,88 @@ __all__ = ["Selector"]
 
 class Selector:
     def __init__(self, feature_fold: str) -> None:
-        # path
-        self.addFeature_fold = os.path.join(feature_fold, "addFeature")
-        self.getFeature_fold = os.path.join(feature_fold, "getFeature")
-        self.profile_path    = os.path.join(feature_fold, "profile.csv")
-        if not os.path.exists(feature_fold): os.makedirs(feature_fold)
-
-        # profile
-        if os.path.exists(self.profile_path):
-            self.profile = pd.read_csv(self.profile_path)
-        else:
-            self.profile = pd.DataFrame(columns=["embd_fold"])
-            self.profile.to_csv(self.profile_path, index=False)
+        self.feature_fold = feature_fold
 
     """ addFeature """
 
-    def addFeature(
-        self, embd_fold: str | list[str], batch_size: int = 10000,
+    def addFeatureChr(
+        self, chromosome: str, bucket_size: int, embd_folds: str | list[str], 
+        processes: int = None
     ) -> None:
-        # if embd_fold not in self.profile, add to end of self.profile
-        # this step make sure input embd_fold can be indexed in self.profile
-        # since index is used to store and track feature
-        if isinstance(embd_fold, str): embd_fold = [embd_fold]
-        for i in embd_fold:
-            fold = os.path.abspath(i)
-            if fold not in self.profile["embd_fold"].values:
-                self.profile.loc[len(self.profile), "embd_fold"] = fold
-        self.profile.to_csv(self.profile_path, index=False)
+        if isinstance(embd_folds, str): embd_folds = [embd_folds]
+        for embd_fold in tqdm.tqdm(
+            embd_folds, dynamic_ncols=True, smoothing=0, position=0,
+            unit="sample", desc=f"chromosome {chromosome}"
+        ):
+            # get the embd and position, sorted by position
+            embd, pos = Selector.getEmbd(embd_fold, chromosome)
+            # get bucket index and each bucket index's start embd index
+            idx_bucket, idx_embd = np.unique(pos//bucket_size, return_index=1)
+            idx_bucket = idx_bucket.tolist()
+            idx_embd = np.append(idx_embd, len(embd))
+            # split embd by process and bucket index
+            if processes is None: processes = multiprocessing.cpu_count()
+            else: processes = min(processes, multiprocessing.cpu_count())
+            buckets_processes = []
+            for p in range(processes):
+                # start and end of bucket index for each process
+                i = p * (len(idx_bucket)//processes)
+                if p == processes-1: j = len(idx_bucket)
+                else: j = (p+1) * (len(idx_bucket)//processes)
+                # input of each process: paths and embds
+                buckets_path = [
+                    os.path.join(
+                        self.feature_fold, chromosome, 
+                        f"{idx_bucket[b]:08}.npy"
+                    ) for b in range(i, j)
+                ]
+                buckets_embd = [
+                    embd[idx_embd[b]:idx_embd[b+1]] for b in range(i, j)
+                ]
+                buckets_processes.append((buckets_path, buckets_embd, p))
+            # process buckets in parallel by process
+            with multiprocessing.Pool(processes=processes) as pool: list(
+                pool.imap(Selector.addFeatureBucketsWrapper, buckets_processes)
+            )
 
-        # since all embd_fold can be indexed in self.profile, transfer input 
-        # embd_fold from str fold path to index in self.profile
-        embd_fold = [self.profile[
-            self.profile["embd_fold"]==os.path.abspath(i)
-        ].index[0] for i in embd_fold]
+    @staticmethod
+    def addFeatureBucketsWrapper(
+        buckets: tuple[list[str], list[np.ndarray], int]
+    ) -> None: return Selector.addFeatureBuckets(*buckets)
 
-        # get all job need to be run (i, j, chromosome), i, j are sample index
-        jobs = []
-        for i in embd_fold:
-            for j in self.profile.index[:i+1]:
-                for chromosome in [str(i) for i in range(1, 23)] + ["X"]:
-                    # check if feature already calculated
-                    x1path = os.path.join(
-                        self.addFeature_fold, f"{i:08}/{j:08}/{chromosome}.npy"
-                    )
-                    x2path = os.path.join(
-                        self.addFeature_fold, f"{j:08}/{i:08}/{chromosome}.npy"
-                    )
-                    if os.path.exists(x1path) and os.path.exists(x2path): 
-                        continue
-                    # add to jobs list if not in jobs list
-                    job = (i, j, chromosome) if i < j else (j, i, chromosome)
-                    if job not in jobs: jobs.append(job)
-        # since we use help function self.addFeatureJob to run each job 
-        # independently, can be modified to parallel in the future
-        for job in tqdm.tqdm(
-            jobs, dynamic_ncols=True, smoothing=0, unit="job", desc="addFeature"
-        ): self.addFeatureJob(*job, batch_size)
-
-    def addFeatureJob(
-        self, i: int, j: int, chromosome: str, batch_size: int = 10000,
+    @staticmethod
+    def addFeatureBuckets(
+        paths: list[str], embds: list[np.ndarray], p: int
     ) -> None:
-        x1path = os.path.join(
-            self.addFeature_fold, f"{i:08}/{j:08}/{chromosome}.npy"
-        )
-        x2path = os.path.join(
-            self.addFeature_fold, f"{j:08}/{i:08}/{chromosome}.npy"
-        )
-
-        # check if feature already calculated
-        if os.path.exists(x1path) and os.path.exists(x2path): return
-
-        x1fold = self.profile.loc[i, "embd_fold"]
-        x1embd, x1pos = Selector.getEmbd(x1fold, chromosome)
-        x2fold = self.profile.loc[j, "embd_fold"]
-        x2embd, x2pos = Selector.getEmbd(x2fold, chromosome)
-
-        # max distance of x1 and x2
-        x1, x2 = Selector.getMaxDist(x1embd, x2embd, batch_size)
-        # combine pos and distance as feature
-        x1 = np.column_stack((x1pos, x1))
-        x2 = np.column_stack((x2pos, x2))
-        # sort by distance
-        order = np.argsort(x1[:, 1])
-        x1 = x1[order[::-1]]
-        order = np.argsort(x2[:, 1])
-        x2 = x2[order[::-1]]
-        # drop duplicates reads with same position, keep the first one
-        _, index = np.unique(x1[:, 0], return_index=True)
-        x1 = x1[np.sort(index)]
-        _, index = np.unique(x2[:, 0], return_index=True)
-        x2 = x2[np.sort(index)]
-
-        # save
-        if not os.path.exists(os.path.dirname(x1path)): 
-            os.makedirs(os.path.dirname(x1path))
-        if not os.path.exists(os.path.dirname(x2path)): 
-            os.makedirs(os.path.dirname(x2path))
-        np.save(x1path, x1)
-        np.save(x2path, x2)
+        for b in tqdm.tqdm(
+            range(len(paths)), dynamic_ncols=True, smoothing=0, position=p+1, 
+            unit="bucket", desc=f"process {p}", leave=False
+        ):
+            # get feature, embd[:, :768] distance [:, 768]
+            if os.path.exists(paths[b]): feature = np.load(paths[b])
+            else: feature = np.zeros([0, 769], dtype=np.float32)
+            # add embd to end of feature where distance is 0
+            feature = np.concatenate([
+                feature, 
+                np.column_stack(
+                    (embds[b], np.zeros(len(embds[b]), dtype=np.float32))
+                )
+            ])
+            # get max distance
+            dist = np.max(
+                #torch.cdist(
+                #    torch.from_numpy(embds[b]), 
+                #    torch.from_numpy(feature[:, :768])
+                #).numpy(),
+                scipy.spatial.distance.cdist(embds[b], feature[:, :768]), 
+                #Selector.getEuclideanDistance(embds[b], feature[:, :768]), 
+                axis=0
+            )
+            feature[:, 768] = np.maximum(feature[:, 768], dist)
+            # save
+            if not os.path.exists(os.path.dirname(paths[b])): 
+                os.makedirs(os.path.dirname(paths[b]), exist_ok=True)
+            np.save(paths[b], feature)
 
     """ getFeature """
 
@@ -326,83 +310,16 @@ class Selector:
         # filter read that cover at least one variants with p-value<=pval_thresh
         if pval_thresh is not None:
             embd = embd[embd[:, 769-int(np.log10(pval_thresh))]>=1, :]
+        # sort row by position embd[:, 768]
+        embd = embd[embd[:, 768].argsort()]
         # embd[:, :768] for embedding, embd[:, 768] for pos
-        return embd[:, :768], embd[:, 768]  # (N, 768), (N,)
+        return embd[:, :768], embd[:, 768].astype(np.int32)     # (N, 768), (N,)
 
-    @staticmethod
-    def getMaxDist(
-        x1: np.ndarray, x2: np.ndarray, batch_size: int = 10000
-    ) -> tuple[np.ndarray, np.ndarray]:
-        """
-        This function is equivalent to max of axis 1, 0 of torch.cdist(x1, x2). 
-        We use some tricks to avoid memory overflow: use torch.cdist to compute 
-        batch_size of x1 and x2 each time, and directly get the max distance of 
-        axis 1 and 0 of the batch distance matrix instead of save matrix in the 
-        memory. 
-
-        To show the function equivalents to torch.cdist,
-            x1 = np.random.rand(25000, 10)
-            x2 = np.random.rand(25000, 10)
-            # torch.cdist
-            dist_matrix = torch.cdist(
-                torch.from_numpy(x1), torch.from_numpy(x2)
-            ).numpy()
-            x1dist_torch = np.max(dist_matrix, axis=1)
-            x2dist_torch = np.max(dist_matrix, axis=0)
-            # Selector.getMaxDist
-            x1dist_our, x2dist_our = getMaxDist(x1, x2)
-            # check if the results are the same
-            print(np.allclose(x1dist_torch, x1dist_our))
-            print(np.allclose(x2dist_torch, x2dist_our))
-        which will print True and True. 
-
-        Args:
-            x1: np.ndarray, shape (Ni, D)
-            x2: np.ndarray, shape (Nj, D)
-            batch_size: int, default 10000
-
-        Returns:
-            x1dist: np.ndarray, shape (Ni,)
-                Max distance of axis 1 of Euclidean distance matrix between x1 
-                and x2
-            x2dist: np.ndarray, shape (Nj,)
-                Max distance of axis 0 of Euclidean distance matrix between x1 
-                and x2
-        """
-
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-        x1: torch.Tensor = torch.from_numpy(x1).to(device)     # (Ni, D)
-        x2: torch.Tensor = torch.from_numpy(x2).to(device)     # (Nj, D)
-
-        x1dist = torch.full((len(x1),), float('-inf'), device=device)
-        x2dist = torch.full((len(x2),), float('-inf'), device=device)
-
-        x1batchnum = (x1.shape[0] + batch_size - 1) // batch_size
-        x2batchnum = (x2.shape[0] + batch_size - 1) // batch_size
-
-        for i in tqdm.tqdm(
-            range(x1batchnum), leave=False, unit="batch", dynamic_ncols=True
-        ):
-            start_i = i * batch_size
-            end_i = min(start_i + batch_size, len(x1))
-            x1_batch = x1[start_i:end_i]
-            for j in range(x2batchnum):
-                start_j = j * batch_size
-                end_j = min(start_j + batch_size, len(x2))
-                x2_batch = x2[start_j:end_j]
-                # compute the distance matrix between x1_batch and x2_batch
-                dist_matrix = torch.cdist(x1_batch, x2_batch)
-                # update the max distances for x1 and x2 using the max distances
-                # of current batch
-                x1dist[start_i:end_i] = torch.max(
-                    x1dist[start_i:end_i], torch.max(dist_matrix, dim=1).values
-                )
-                x2dist[start_j:end_j] = torch.max(
-                    x2dist[start_j:end_j], torch.max(dist_matrix, dim=0).values
-                )
-
-        return x1dist.cpu().numpy(), x2dist.cpu().numpy()
+    def getEuclideanDistance(x1: np.ndarray, x2: np.ndarray) -> np.ndarray:
+        x1norm = np.sum(x1**2, axis=1, keepdims=True)           # (N1,  1)
+        x2norm = np.sum(x2**2, axis=1, keepdims=True).T         # ( 1, N2)
+        x1x2   = 2 * np.dot(x1, x2.T)                           # (N1, N2)
+        return np.sqrt(np.maximum(0, x1norm + x2norm - x1x2))   # (N1, N2)
 
     @staticmethod
     def getPearsonCorrelation(x1: np.ndarray, x2: np.ndarray) -> np.ndarray:
