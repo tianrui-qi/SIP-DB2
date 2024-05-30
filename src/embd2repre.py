@@ -82,55 +82,62 @@ class Selector:
     ) -> None:
         path = os.path.join(self.feature_fold, chromosome, f"c{chunk:05}.hdf5")
         key  = f"b{bucket:08}"
-        
-        with h5py.File(path, 'a') as h5f:
-            if key in h5f:
-                # get feature
-                feature = h5f[key]
-                feature_old = feature[:, :]
-                len_old = len(feature_old)
-                feature_new = np.concatenate([
-                    feature_old, 
-                    np.column_stack(
+
+        try:
+            with h5py.File(path, 'a') as h5f:
+                if key in h5f:
+                    # get feature
+                    feature = h5f[key]
+                    feature_old = feature[:, :]
+                    len_old = len(feature_old)
+                    feature_new = np.concatenate([
+                        feature_old, 
+                        np.column_stack(
+                            (embd, np.zeros(len(embd), dtype=np.float32))
+                        )
+                    ])
+                    len_new = len(feature_new)                
+                    # get max distance
+                    dist = np.max(
+                        #torch.cdist(
+                        #    torch.from_numpy(embd), 
+                        #    torch.from_numpy(feature[:, :768])
+                        #).numpy(),
+                        scipy.spatial.distance.cdist(
+                            embd, feature_new[:, :768]
+                        ), 
+                        #Selector.getEuclideanDistance(embd, feature[:, :768]), 
+                        axis=0
+                    )
+                    feature_new[:, 768] = dist
+                    # save
+                    feature.resize((len_new, 769))
+                    feature[len_old:] = feature_new[len_old:]
+                    feature[:len_old, 768] = feature_new[:len_old, 768]
+                else:
+                    # get feature
+                    feature_new = np.column_stack(
                         (embd, np.zeros(len(embd), dtype=np.float32))
                     )
-                ])
-                len_new = len(feature_new)                
-                # get max distance
-                dist = np.max(
-                    #torch.cdist(
-                    #    torch.from_numpy(embd), 
-                    #    torch.from_numpy(feature[:, :768])
-                    #).numpy(),
-                    scipy.spatial.distance.cdist(embd, feature_new[:, :768]), 
-                    #Selector.getEuclideanDistance(embd, feature[:, :768]), 
-                    axis=0
-                )
-                feature_new[:, 768] = dist
-                # save
-                feature.resize((len_new, 769))
-                feature[len_old:] = feature_new[len_old:]
-                feature[:len_old, 768] = feature_new[:len_old, 768]
-            else:
-                # get feature
-                feature_new = np.column_stack(
-                    (embd, np.zeros(len(embd), dtype=np.float32))
-                )
-                # get max distance
-                dist = np.max(
-                    #torch.cdist(
-                    #    torch.from_numpy(embd), 
-                    #    torch.from_numpy(feature[:, :768])
-                    #).numpy(),
-                    scipy.spatial.distance.cdist(embd, feature_new[:, :768]), 
-                    #Selector.getEuclideanDistance(embd, feature[:, :768]), 
-                    axis=0
-                )
-                feature_new[:, 768] = dist
-                # save
-                h5f.create_dataset(
-                    key, data=feature_new, maxshape=(None, 769), chunks=True
-                )
+                    # get max distance
+                    dist = np.max(
+                        #torch.cdist(
+                        #    torch.from_numpy(embd), 
+                        #    torch.from_numpy(feature[:, :768])
+                        #).numpy(),
+                        scipy.spatial.distance.cdist(
+                            embd, feature_new[:, :768]
+                        ), 
+                        #Selector.getEuclideanDistance(embd, feature[:, :768]), 
+                        axis=0
+                    )
+                    feature_new[:, 768] = dist
+                    # save
+                    h5f.create_dataset(
+                        key, data=feature_new, maxshape=(None, 769), chunks=True
+                    )
+        except (BlockingIOError, OSError) as _:
+            print(f"{chromosome} c{chunk:05} b{bucket:08}")
 
     """ getFeature """
 
