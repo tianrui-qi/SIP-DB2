@@ -1,10 +1,9 @@
 import torch
 
 import numpy as np
-import scipy.spatial.distance
+import pandas as pd
 
 import os
-import h5py
 import tqdm
 import functools
 import multiprocessing
@@ -14,130 +13,179 @@ __all__ = ["Selector"]
 
 
 class Selector:
-    def __init__(self, feature_fold: str) -> None:
+    def __init__(self, feature_fold: str, bucket_size: int = 100) -> None:
         self.feature_fold = feature_fold
+        if not os.path.exists(self.feature_fold): os.makedirs(self.feature_fold)
+        # sample map, for transformation between sample_idx and sample_fold 
+        self.sample_map_path = os.path.join(self.feature_fold, "sample_map.csv")
+        if os.path.exists(self.sample_map_path):
+            self.sample_map = pd.read_csv(self.sample_map_path, index_col=0)
+        else:
+            self.sample_map = pd.DataFrame(columns=["sample_fold"])
+            self.sample_map.to_csv(self.sample_map_path)
+        # hash
+        self.hash_size = 1000
+        self.hash_idx_max = {
+             "1": 249000,  "2": 243000,  "3": 199000,  "4": 191000,
+             "5": 182000,  "6": 171000,  "7": 160000,  "8": 146000,
+             "9": 139000, "10": 134000, "11": 136000, "12": 134000,
+            "13": 115000, "14": 108000, "15": 102000, "16":  91000,
+            "17":  84000, "18":  81000, "19":  59000, "20":  65000,
+            "21":  47000, "22":  51000,  "X": 157000,
+        }
+        # bucket
+        self.bucket_size = bucket_size
+        if self.hash_size % self.bucket_size != 0: raise ValueError(
+            "hash_size {} must be divisible by bucket_size {}".format(
+                self.hash_size, self.bucket_size
+            )
+        )
 
     """ addFeature """
 
-    def addFeatureChr(
-        self, chromosome: str, chunk_size: int, bucket_size: int,
-        embd_folds: str | list[str], 
-        processes: int = None
+    def addFeature(
+        self, sample_fold: str | list[str], chromosome: str | list[str]
     ) -> None:
-        if isinstance(embd_folds, str): embd_folds = [embd_folds]
-        for embd_fold in tqdm.tqdm(
-            embd_folds, dynamic_ncols=True, smoothing=0, position=0,
-            unit="sample", desc=f"chromosome {chromosome}"
-        ):
-            # embd and pos, sort by pos
-            embd, pos = Selector.getEmbd(embd_fold, chromosome)
-            # chunk index
-            chunk, chunk2pos = np.unique(
-                pos//(chunk_size*bucket_size), return_index=True
-            )
-            chunk2pos = np.append(chunk2pos, len(pos))
-            # split pos and embd by chunk
-            chunk_pos = [
-                pos[chunk2pos[c]:chunk2pos[c+1]] for c in range(len(chunk))
-            ]
-            chunk_embd = [
-                embd[chunk2pos[c]:chunk2pos[c+1]] for c in range(len(chunk))
-            ]
-            # check if directory of saving result exists
-            os.makedirs(os.path.join(self.feature_fold, chromosome), exist_ok=1)
-            # process each chunk
-            jobs = [
-                (chromosome, chunk[c], bucket_size, chunk_pos[c], chunk_embd[c]) 
-                for c in range(len(chunk))
-            ]
-            with multiprocessing.Pool(processes=processes) as pool:
-                list(tqdm.tqdm(
-                    pool.imap(self.addFeatureChunkWrapper, jobs), 
-                    total=len(jobs), dynamic_ncols=1, smoothing=0, leave=0,
-                    desc=embd_fold, unit="chunk",
+        if isinstance(sample_fold, str): sample_fold = [sample_fold]
+        if isinstance(chromosome, str): chromosome = [chromosome]
+
+        # if sample_fold not in self.profile, add to end of self.profile
+        # this step make sure sample_fold can be indexed in self.profile
+        for i in sample_fold:
+            fold = os.path.abspath(i)
+            if fold not in self.sample_map["sample_fold"].values:
+                self.sample_map.loc[len(self.sample_map), "sample_fold"] = fold
+        self.sample_map.to_csv(self.sample_map_path)
+        # since all sample_fold can be indexed in self.profile, transfer 
+        # sample_fold from str fold path to index in self.profile
+        sample_idx = [self.sample_map[
+            self.sample_map["sample_fold"]==os.path.abspath(i)
+        ].index[0] for i in sample_fold]
+
+        # loop thought hash_index since we use same hash_size for store feature
+        # and embd of all sample, all chromosome
+        for c in chromosome:
+            for hash_idx in tqdm.tqdm(
+                range(self.hash_idx_max[c]), dynamic_ncols=True,
+                smoothing=0, unit="hash", desc=f"addFeature {c}"
+            ): self.addFeatureChrHash(sample_idx, c, hash_idx)
+
+    def addFeatureChrHash(
+        self, sample_idx: int | list[int], chromosome: str, hash_idx: int
+    ) -> None:
+        hash_fold = f"{hash_idx:06d}.npy"[:3]
+        hash_file = f"{hash_idx:06d}.npy"[3:]
+
+        # embd, including new_embd and old_embd
+        # { bucket_idx : (:768 embd, 768 pos, 769 sample_idx, 770 embd_idx) }
+        # feature, including new_feature and old_feature)
+        # { bucket_idx : (sample_idx, pos, embd_idx, distance) }
+
+        ## new_embd/feature
+        # load embd at hash_idx of all input sample_idx, split by bucket_idx
+        new_embd = self.getEmbd(sample_idx, chromosome, hash_idx)
+        if new_embd is None: return
+        # create feature for new embd
+        new_feature = {
+            int(b): np.column_stack([
+                new_embd[b][:, 769], new_embd[b][:, 768], new_embd[b][:, 770],
+                np.zeros(len(new_embd[b]), dtype=np.float32)
+            ]) for b in new_embd.keys()
+        }
+
+        ## old_embd/feature
+        old_embd = {
+            b: np.zeros((0, 768+3), dtype=np.float32) for b in new_embd.keys()
+        }
+        old_feature = {
+            b: np.zeros((0, 4), dtype=np.float32) for b in new_embd.keys()
+        }
+        # load and update old_embd/feature if feature_path exists
+        feature_path = os.path.join(
+            self.feature_fold, chromosome, hash_fold, hash_file
+        )
+        if os.path.exists(feature_path): 
+            # update old_feature
+            feature = np.load(feature_path)
+            bucket_idx = feature[:, 1] % self.hash_size // self.bucket_size
+            for b in np.unique(bucket_idx):
+                old_feature[int(b)] = feature[bucket_idx==b]
+            # update old_embd
+            # since we only want to update buckets that in new_embd.keys(),
+            # get the sample_idx in old_feature that participate in the 
+            # calculation of these buckets
+            old_sample_idx = np.unique(
+                feature[np.isin(bucket_idx, list(new_embd.keys()))][:, 0]
+            ).astype(int).tolist()
+            embd = self.getEmbd(old_sample_idx, chromosome, hash_idx)
+            for b in embd.keys(): old_embd[b] = embd[b]
+            # sort old_embd/feature by sample_idx and embd_idx to match
+            for b in new_embd.keys():
+                old_embd[b] = old_embd[b][
+                    np.lexsort([old_embd[b][:, 770], old_embd[b][:, 769]])
+                ]
+                old_feature[b] = old_feature[b][
+                    np.lexsort([old_feature[b][:, 2], old_feature[b][:, 0]])
+                ]
+
+        ## merge old and new feature
+        feature = old_feature.copy()
+        for b in new_feature.keys():
+            feature[b] = np.concatenate([feature[b], new_feature[b]])
+
+        ## calculate max distance and update feature
+        for b in new_embd.keys():
+            dist = np.max(torch.cdist(
+                torch.from_numpy(new_embd[b][:, :768]), 
+                torch.from_numpy(np.concatenate(
+                    [old_embd[b][:, :768], new_embd[b][:, :768]]
                 ))
+            ).numpy(), axis=0)
+            feature[b][:, 3] = np.maximum(feature[b][:, 3], dist)
 
-    def addFeatureChunkWrapper(self, args: tuple) -> None:
-        self.addFeatureChunk(*args)
+        ## save feature
+        feature = np.concatenate([feature[b] for b in feature.keys()])
+        os.makedirs(os.path.dirname(feature_path), exist_ok=1)
+        np.save(feature_path, feature)
 
-    def addFeatureChunk(
-        self, chromosome: str, chunk: int, bucket_size: int,
-        pos: np.ndarray, embd: np.ndarray,
-    ) -> None:
-        # bucket index
-        bucket, bucket2pos = np.unique(pos//bucket_size, return_index=True)
-        bucket2pos = np.append(bucket2pos, len(embd))
-        # split embd by bucket
-        bucket_embd = [
-            embd[bucket2pos[b]:bucket2pos[b+1]] for b in range(len(bucket))
-        ]
-        # process each bucket
-        for b in range(len(bucket)):
-            self.addFeatureBucket(
-                chromosome, chunk, bucket[b], bucket_embd[b]
+    def getEmbd(
+        self, sample_idx: int | list[int], chromosome: str, hash_idx: int
+    ) -> dict[int, np.ndarray] | None:
+        if isinstance(sample_idx, int): sample_idx = [sample_idx]
+        if len(sample_idx) == 0: return None
+
+        hash_fold = f"{hash_idx:06d}.npy"[:3]
+        hash_file = f"{hash_idx:06d}.npy"[3:]
+
+        # load embd at hash_idx of all sample_idx
+        # (:768 embd, 768 pos, 769 sample_idx, 770 embd_idx)
+        embd = np.zeros((0, 768+3), dtype=np.float32)
+        for s in sample_idx:
+            sample_path = os.path.join(
+                self.sample_map.loc[s, "sample_fold"], 
+                chromosome, hash_fold, hash_file
             )
+            if not os.path.exists(sample_path): continue
+            embd_s = np.load(sample_path)[:, :768+1]    # (:768 embd, 768 pos)
+            # add sample_idx to column 769, embd_idx to column 770
+            embd_s = np.column_stack([
+                embd_s, np.full(len(embd_s), s), np.arange(len(embd_s))
+            ])
+            # concat to embd
+            embd = np.concatenate([embd, embd_s])
 
-    def addFeatureBucket(
-        self, chromosome: str, chunk: int, bucket: int, embd: np.ndarray
-    ) -> None:
-        path = os.path.join(self.feature_fold, chromosome, f"c{chunk:05}.hdf5")
-        key  = f"b{bucket:08}"
+        # if no embd, means no sample cover this hash_idx, return
+        if len(embd) == 0: return None
 
-        try:
-            with h5py.File(path, 'a') as h5f:
-                if key in h5f:
-                    # get feature
-                    feature = h5f[key]
-                    feature_old = feature[:, :]
-                    len_old = len(feature_old)
-                    feature_new = np.concatenate([
-                        feature_old, 
-                        np.column_stack(
-                            (embd, np.zeros(len(embd), dtype=np.float32))
-                        )
-                    ])
-                    len_new = len(feature_new)                
-                    # get max distance
-                    dist = np.max(
-                        #torch.cdist(
-                        #    torch.from_numpy(embd), 
-                        #    torch.from_numpy(feature[:, :768])
-                        #).numpy(),
-                        scipy.spatial.distance.cdist(
-                            embd, feature_new[:, :768]
-                        ), 
-                        #Selector.getEuclideanDistance(embd, feature[:, :768]), 
-                        axis=0
-                    )
-                    feature_new[:, 768] = dist
-                    # save
-                    feature.resize((len_new, 769))
-                    feature[len_old:] = feature_new[len_old:]
-                    feature[:len_old, 768] = feature_new[:len_old, 768]
-                else:
-                    # get feature
-                    feature_new = np.column_stack(
-                        (embd, np.zeros(len(embd), dtype=np.float32))
-                    )
-                    # get max distance
-                    dist = np.max(
-                        #torch.cdist(
-                        #    torch.from_numpy(embd), 
-                        #    torch.from_numpy(feature[:, :768])
-                        #).numpy(),
-                        scipy.spatial.distance.cdist(
-                            embd, feature_new[:, :768]
-                        ), 
-                        #Selector.getEuclideanDistance(embd, feature[:, :768]), 
-                        axis=0
-                    )
-                    feature_new[:, 768] = dist
-                    # save
-                    h5f.create_dataset(
-                        key, data=feature_new, maxshape=(None, 769), chunks=True
-                    )
-        except (BlockingIOError, OSError) as _:
-            print(f"{chromosome} c{chunk:05} b{bucket:08}")
+        # split embd by bucket_idx
+        # { bucket_idx : (:768 embd, 768 pos, 769 sample_idx, 770 embd_idx) }
+        bucket_idx = embd[:, 768] % self.hash_size // self.bucket_size
+        return {int(b): embd[bucket_idx==b] for b in np.unique(bucket_idx)}
+
+
+class Other:
+    def __init__(self, feature_fold: str) -> None:
+        self.feature_fold = feature_fold
 
     """ getFeature """
 

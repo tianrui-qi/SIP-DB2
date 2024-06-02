@@ -33,19 +33,18 @@ def embd2hash(
         bucket = bucket.astype(int).tolist()
         bucket2pos = bucket2pos.astype(int).tolist()
         # store file in bucket
-        for b  in tqdm.tqdm(
+        for b in tqdm.tqdm(
             range(len(bucket)), leave=False,
             unit="bucket", desc=chromosome, smoothing=0.0, dynamic_ncols=True,
         ):
             embd_bucket = embd[bucket2pos[b]:bucket2pos[b+1]]
-            bucket_str = f"{bucket[b]:06d}"
-            fold_name = bucket_str[:3]
-            file_name = bucket_str[3:] + ".npy"
+            hash_idx = f"{bucket[b]:06d}"
+            hash_fold, hash_file = hash_idx[:3], hash_idx[3:]+".npy"
             os.makedirs(
-                os.path.join(hash_save_fold, chromosome, fold_name),
+                os.path.join(hash_save_fold, chromosome, hash_fold),
                 exist_ok=True
             )
             np.save(
-                os.path.join(hash_save_fold, chromosome, fold_name, file_name), 
+                os.path.join(hash_save_fold, chromosome, hash_fold, hash_file), 
                 embd_bucket
             )
