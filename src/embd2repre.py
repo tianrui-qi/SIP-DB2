@@ -16,12 +16,12 @@ class Selector:
     def __init__(self, feature_fold: str, bucket_size: int = 100) -> None:
         self.feature_fold = feature_fold
         if not os.path.exists(self.feature_fold): os.makedirs(self.feature_fold)
-        # sample map, for transformation between sample_idx and sample_fold 
+        # sample map, for transformation between sample_idx and embd_fold 
         self.sample_map_path = os.path.join(self.feature_fold, "sample_map.csv")
         if os.path.exists(self.sample_map_path):
             self.sample_map = pd.read_csv(self.sample_map_path, index_col=0)
         else:
-            self.sample_map = pd.DataFrame(columns=["sample_fold"])
+            self.sample_map = pd.DataFrame(columns=["embd_fold"])
             self.sample_map.to_csv(self.sample_map_path)
         # hash
         self.hash_size = 1000
@@ -44,23 +44,23 @@ class Selector:
     """ addFeature """
 
     def addFeature(
-        self, sample_fold: str | list[str], chromosome: str | list[str]
+        self, embd_fold: str | list[str], chromosome: str | list[str]
     ) -> None:
-        if isinstance(sample_fold, str): sample_fold = [sample_fold]
+        if isinstance(embd_fold, str): embd_fold = [embd_fold]
         if isinstance(chromosome, str): chromosome = [chromosome]
 
-        # if sample_fold not in self.profile, add to end of self.profile
-        # this step make sure sample_fold can be indexed in self.profile
-        for i in sample_fold:
+        # if embd_fold not in self.sample_map, add to end of self.sample_map
+        # this step make sure embd_fold can be indexed in self.sample_map
+        for i in embd_fold:
             fold = os.path.abspath(i)
-            if fold not in self.sample_map["sample_fold"].values:
-                self.sample_map.loc[len(self.sample_map), "sample_fold"] = fold
+            if fold not in self.sample_map["embd_fold"].values:
+                self.sample_map.loc[len(self.sample_map), "embd_fold"] = fold
         self.sample_map.to_csv(self.sample_map_path)
-        # since all sample_fold can be indexed in self.profile, transfer 
-        # sample_fold from str fold path to index in self.profile
+        # since all embd_fold can be indexed in self.sample_map, transfer 
+        # embd_fold from str fold path to index in self.sample_map
         sample_idx = [self.sample_map[
-            self.sample_map["sample_fold"]==os.path.abspath(i)
-        ].index[0] for i in sample_fold]
+            self.sample_map["embd_fold"]==os.path.abspath(i)
+        ].index[0] for i in embd_fold]
 
         # loop thought hash_index since we use same hash_size for store feature
         # and embd of all sample, all chromosome
@@ -117,16 +117,17 @@ class Selector:
             old_sample_idx = np.unique(
                 feature[np.isin(bucket_idx, list(new_embd.keys()))][:, 0]
             ).astype(int).tolist()
-            embd = self.getEmbd(old_sample_idx, chromosome, hash_idx)
-            for b in embd.keys(): old_embd[b] = embd[b]
-            # sort old_embd/feature by sample_idx and embd_idx to match
-            for b in new_embd.keys():
-                old_embd[b] = old_embd[b][
-                    np.lexsort([old_embd[b][:, 770], old_embd[b][:, 769]])
-                ]
-                old_feature[b] = old_feature[b][
-                    np.lexsort([old_feature[b][:, 2], old_feature[b][:, 0]])
-                ]
+            if len(old_sample_idx) != 0:
+                embd = self.getEmbd(old_sample_idx, chromosome, hash_idx)
+                for b in embd.keys(): old_embd[b] = embd[b]
+                # sort old_embd/feature by sample_idx and embd_idx to match
+                for b in new_embd.keys():
+                    old_embd[b] = old_embd[b][
+                        np.lexsort([old_embd[b][:, 770], old_embd[b][:, 769]])
+                    ]
+                    old_feature[b] = old_feature[b][
+                        np.lexsort([old_feature[b][:, 2], old_feature[b][:, 0]])
+                    ]
 
         ## merge old and new feature
         feature = old_feature.copy()
@@ -135,12 +136,10 @@ class Selector:
 
         ## calculate max distance and update feature
         for b in new_embd.keys():
-            dist = np.max(torch.cdist(
-                torch.from_numpy(new_embd[b][:, :768]), 
-                torch.from_numpy(np.concatenate(
-                    [old_embd[b][:, :768], new_embd[b][:, :768]]
-                ))
-            ).numpy(), axis=0)
+            dist = Selector.getMaxDist(
+                new_embd[b][:, :768], 
+                np.concatenate([old_embd[b][:, :768], new_embd[b][:, :768]])
+            )
             feature[b][:, 3] = np.maximum(feature[b][:, 3], dist)
 
         ## save feature
@@ -162,7 +161,7 @@ class Selector:
         embd = np.zeros((0, 768+3), dtype=np.float32)
         for s in sample_idx:
             sample_path = os.path.join(
-                self.sample_map.loc[s, "sample_fold"], 
+                self.sample_map.loc[s, "embd_fold"], 
                 chromosome, hash_fold, hash_file
             )
             if not os.path.exists(sample_path): continue
@@ -181,6 +180,68 @@ class Selector:
         # { bucket_idx : (:768 embd, 768 pos, 769 sample_idx, 770 embd_idx) }
         bucket_idx = embd[:, 768] % self.hash_size // self.bucket_size
         return {int(b): embd[bucket_idx==b] for b in np.unique(bucket_idx)}
+
+    @staticmethod
+    def getMaxDist(
+        x1: np.ndarray, x2: np.ndarray, batch_size: int = 10000
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """
+        This function is equivalent to max of 0 of torch.cdist(x1, x2). 
+        We use some tricks to avoid memory overflow: use torch.cdist to compute 
+        batch_size of x1 and x2 each time, and directly get the max distance of 
+        axis 0 of the batch distance matrix instead of save matrix in the 
+        memory. 
+
+        To show the function equivalents to torch.cdist,
+            x1 = np.random.rand(25000, 10)
+            x2 = np.random.rand(25000, 10)
+            # torch.cdist
+            dist_matrix = torch.cdist(
+                torch.from_numpy(x1), torch.from_numpy(x2)
+            ).numpy()
+            x2dist_torch = np.max(dist_matrix, axis=0)
+            # Selector.getMaxDist
+            x2dist_our = getMaxDist(x1, x2)
+            # check if the results are the same
+            print(np.allclose(x2dist_torch, x2dist_our))
+        which will print True and True. 
+
+        Args:
+            x1: np.ndarray, shape (Ni, D)
+            x2: np.ndarray, shape (Nj, D)
+            batch_size: int, default 10000
+
+        Returns:
+            x2dist: np.ndarray, shape (Nj,)
+                Max distance of axis 0 of Euclidean distance matrix between x1 
+                and x2
+        """
+
+        x1: torch.Tensor = torch.from_numpy(x1)     # (Ni, D)
+        x2: torch.Tensor = torch.from_numpy(x2)     # (Nj, D)
+
+        x1batchnum = (x1.shape[0] + batch_size - 1) // batch_size
+        x2batchnum = (x2.shape[0] + batch_size - 1) // batch_size
+
+        x2dist = torch.full((len(x2),), float('-inf'))
+        for i in tqdm.tqdm(
+            range(x1batchnum), leave=False, unit="batch", dynamic_ncols=True
+        ):
+            start_i = i * batch_size
+            end_i = min(start_i + batch_size, len(x1))
+            x1_batch = x1[start_i:end_i]
+            for j in range(x2batchnum):
+                start_j = j * batch_size
+                end_j = min(start_j + batch_size, len(x2))
+                x2_batch = x2[start_j:end_j]
+                # compute the distance matrix between x1_batch and x2_batch
+                dist_matrix = torch.cdist(x1_batch, x2_batch)
+                # update the max distances for x2 using the max distances of 
+                # current batch
+                x2dist[start_j:end_j] = torch.max(
+                    x2dist[start_j:end_j], torch.max(dist_matrix, dim=0).values
+                )
+        return x2dist.numpy()
 
 
 class Other:
