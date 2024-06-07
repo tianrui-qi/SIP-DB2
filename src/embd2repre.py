@@ -44,10 +44,10 @@ class Selector:
     """ addFeature """
 
     def addFeature(
-        self, embd_fold: str | list[str], chromosome: str | list[str]
+        self, embd_fold: str | list[str], chromosome: str,
+        hash_idx_start: int = 0, hash_idx_end: int = None,
     ) -> None:
         if isinstance(embd_fold, str): embd_fold = [embd_fold]
-        if isinstance(chromosome, str): chromosome = [chromosome]
 
         # if embd_fold not in self.sample_map, add to end of self.sample_map
         # this step make sure embd_fold can be indexed in self.sample_map
@@ -63,14 +63,17 @@ class Selector:
         ].index[0] for i in embd_fold]
 
         # loop thought hash_index since we use same hash_size for store feature
-        # and embd of all sample, all chromosome
-        for c in chromosome:
-            for hash_idx in tqdm.tqdm(
-                range(self.hash_idx_max[c]), dynamic_ncols=True,
-                smoothing=0, unit="hash", desc=f"addFeature {c}"
-            ): self.addFeatureChrHash(sample_idx, c, hash_idx)
+        # and embd of all sample
+        hash_idx_start = max(hash_idx_start, 0)
+        if hash_idx_end is None: hash_idx_end = self.hash_idx_max[chromosome]
+        else: hash_idx_end = min(hash_idx_end, self.hash_idx_max[chromosome])
+        for hash_idx in tqdm.tqdm(
+            range(hash_idx_start, hash_idx_end), 
+            dynamic_ncols=True, smoothing=0, 
+            unit="hash", desc=f"addFeature {chromosome}"
+        ): self.addFeatureHash(sample_idx, chromosome, hash_idx)
 
-    def addFeatureChrHash(
+    def addFeatureHash(
         self, sample_idx: int | list[int], chromosome: str, hash_idx: int
     ) -> None:
         hash_fold = f"{hash_idx:06d}.npy"[:3]
@@ -243,6 +246,48 @@ class Selector:
                 )
         return x2dist.numpy()
 
+    """ getFeature """
+
+    """ getRepresentation """
+
+    def getRepresentation():
+        """
+        TODO: run fit and transform
+        """
+        pass
+
+    def fit():
+        """
+        TODO:
+        1. check if pca and mean already stored in folder pca
+        2. run applyFeature for sample in self.profile
+        3. get the mean of all not nan part
+        4. store the mean in folder pca for future use
+        5. replace nan with mean
+        6. run pca on all embd, store pca in folder pca for future use
+        """
+        pass
+
+    def transform():
+        """
+        TODO:
+        1. check if pca and mean already stored in folder pca
+        2. run applyFeature for input embd_fold
+        3. replace nan with mean and transform with pca
+        """
+        pass
+
+    """ help function """
+
+    @staticmethod
+    def getPearsonCorrelation(x1: np.ndarray, x2: np.ndarray) -> np.ndarray:
+        x1centered = x1 - x1.mean(axis=1, keepdims=True)        # (N1, 768)
+        x2centered = x2 - x2.mean(axis=1, keepdims=True)        # (N2, 768)
+        numerator = np.dot(x1centered, x2centered.T)            # (N1, N2)
+        x1var = np.sum(x1centered**2, axis=1, keepdims=True)    # (N1,  1)
+        x2var = np.sum(x2centered**2, axis=1, keepdims=True)    # (N2,  1)
+        denominator = np.sqrt(np.dot(x1var, x2var.T))           # (N1, N2)
+        return numerator / denominator                          # (N1, N2)
 
 class Other:
     def __init__(self, feature_fold: str) -> None:
@@ -421,35 +466,6 @@ class Other:
 
         return embd_selected    # [Kc, 768]
 
-    """ getRepresentation """
-
-    def getRepresentation():
-        """
-        TODO: run fit and transform
-        """
-        pass
-
-    def fit():
-        """
-        TODO:
-        1. check if pca and mean already stored in folder pca
-        2. run applyFeature for sample in self.profile
-        3. get the mean of all not nan part
-        4. store the mean in folder pca for future use
-        5. replace nan with mean
-        6. run pca on all embd, store pca in folder pca for future use
-        """
-        pass
-
-    def transform():
-        """
-        TODO:
-        1. check if pca and mean already stored in folder pca
-        2. run applyFeature for input embd_fold
-        3. replace nan with mean and transform with pca
-        """
-        pass
-
     """ help function """
 
     @staticmethod
@@ -465,19 +481,3 @@ class Other:
         embd = embd[embd[:, 768].argsort()]
         # embd[:, :768] for embedding, embd[:, 768] for pos
         return embd[:, :768], embd[:, 768].astype(np.int32)     # (N, 768), (N,)
-
-    def getEuclideanDistance(x1: np.ndarray, x2: np.ndarray) -> np.ndarray:
-        x1norm = np.sum(x1**2, axis=1, keepdims=True)           # (N1,  1)
-        x2norm = np.sum(x2**2, axis=1, keepdims=True).T         # ( 1, N2)
-        x1x2   = 2 * np.dot(x1, x2.T)                           # (N1, N2)
-        return np.sqrt(np.maximum(0, x1norm + x2norm - x1x2))   # (N1, N2)
-
-    @staticmethod
-    def getPearsonCorrelation(x1: np.ndarray, x2: np.ndarray) -> np.ndarray:
-        x1centered = x1 - x1.mean(axis=1, keepdims=True)        # (N1, 768)
-        x2centered = x2 - x2.mean(axis=1, keepdims=True)        # (N2, 768)
-        numerator = np.dot(x1centered, x2centered.T)            # (N1, N2)
-        x1var = np.sum(x1centered**2, axis=1, keepdims=True)    # (N1,  1)
-        x2var = np.sum(x2centered**2, axis=1, keepdims=True)    # (N2,  1)
-        denominator = np.sqrt(np.dot(x1var, x2var.T))           # (N1, N2)
-        return numerator / denominator                          # (N1, N2)
