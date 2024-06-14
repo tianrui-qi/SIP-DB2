@@ -2,9 +2,11 @@ import torch
 
 import numpy as np
 import pandas as pd
+import sklearn.decomposition
 
 import os
 import tqdm
+import pickle
 
 
 __all__ = ["Selector"]
@@ -20,7 +22,6 @@ class Selector:
             self.sample_map = pd.read_csv(self.sample_map_path, index_col=0)
         else:
             self.sample_map = pd.DataFrame(columns=["embd_fold"])
-            self.sample_map.to_csv(self.sample_map_path)
         # hash
         self.hash_size = 1000
         self.hash_idx_max = {
@@ -39,14 +40,25 @@ class Selector:
             )
         )
 
-    """ addFeature """
+    """ addFeature (train) """
 
     def addFeature(
         self, embd_fold: str | list[str], 
         chromosome: str, hash_idx_start: int = 0, hash_idx_end: int = 249000,
     ) -> None:
-        # transfer embd_fold to sample_idx in self.sample_map
-        sample_idx = self.fold2idx(embd_fold)
+        if isinstance(embd_fold, str): embd_fold = [embd_fold]
+        # if embd_fold not in self.sample_map, add to end of self.sample_map
+        # this step make sure embd_fold can be indexed in self.sample_map
+        for i in embd_fold:
+            fold = os.path.abspath(i)
+            if fold not in self.sample_map["embd_fold"].values:
+                self.sample_map.loc[len(self.sample_map), "embd_fold"] = fold
+        self.sample_map.to_csv(self.sample_map_path)
+        # since all embd_fold can be indexed in self.sample_map, transfer 
+        # embd_fold from str fold path to index in self.sample_map
+        sample_idx = [int(self.sample_map[
+            self.sample_map["embd_fold"]==os.path.abspath(i)
+        ].index[0]) for i in embd_fold]
 
         # loop thought hash_index since we use same hash_size for store feature
         # and embd of all sample
@@ -55,7 +67,7 @@ class Selector:
         for hash_idx in tqdm.tqdm(
             range(hash_idx_start, hash_idx_end), 
             dynamic_ncols=True, smoothing=0, 
-            unit="hash", desc=f"addFeature {chromosome}"
+            unit="hash", desc=f"addFeature/{chromosome}"
         ): self.addFeatureHash(sample_idx, chromosome, hash_idx)
 
     def addFeatureHash(
@@ -71,7 +83,7 @@ class Selector:
 
         ## new_embd/feature
         # load embd at hash_idx of all input sample_idx, split by bucket_idx
-        new_embd = self.getEmbd(sample_idx, chromosome, hash_idx)
+        new_embd = self._getEmbdByIdx(sample_idx, chromosome, hash_idx)
         if new_embd is None: return
         # create feature for new embd
         new_feature = {
@@ -106,7 +118,7 @@ class Selector:
                 feature[np.isin(bucket_idx, list(new_embd.keys()))][:, 0]
             ).astype(int).tolist()
             if len(old_sample_idx) != 0:
-                embd = self.getEmbd(old_sample_idx, chromosome, hash_idx)
+                embd = self._getEmbdByIdx(old_sample_idx, chromosome, hash_idx)
                 for b in embd.keys(): old_embd[b] = embd[b]
                 # sort old_embd/feature by sample_idx and embd_idx to match
                 for b in new_embd.keys():
@@ -135,172 +147,7 @@ class Selector:
         os.makedirs(os.path.dirname(feature_path), exist_ok=1)
         np.save(feature_path, feature)
 
-    """ getFeature """
-
-    def getFeature(
-        self, chromosome: str | list[str] = None
-    ) -> dict[str, np.ndarray]:
-        # input check
-        if chromosome is None: 
-            chromosome = [str(i) for i in range(1, 23)] + ["X"]
-        if isinstance(chromosome, str): chromosome = [chromosome]
-
-        # get feature of each chromosome
-        for c in chromosome:
-            # check if feature of current chromosome already get
-            feature_c_path = os.path.join(self.feature_fold, c, "feature.npy")
-            if os.path.exists(feature_c_path): continue
-            # get feature of current chromosome by loop through all hash_idx
-            feature_c = []
-            for hash_idx in tqdm.tqdm(
-                range(self.hash_idx_max[c]), 
-                dynamic_ncols=True, smoothing=0, 
-                unit="hash", desc=f"getFeature {c}",
-            ):
-                # load feature
-                hash_fold = f"{hash_idx:06d}.npy"[:3]
-                hash_file = f"{hash_idx:06d}.npy"[3:]
-                feature_ch_path = os.path.join(
-                    self.feature_fold, c, hash_fold, hash_file
-                )
-                if not os.path.exists(feature_ch_path): continue
-                feature_ch = np.load(feature_ch_path)
-                # get max distance of each bucket
-                bucket_idx = feature_ch[:, 1]%self.hash_size//self.bucket_size
-                for b in np.unique(bucket_idx):
-                    feature_c.append([
-                        hash_idx, b, np.max(feature_ch[bucket_idx==b][:, 3])
-                    ])
-            # to ndarray and save
-            feature_c = np.array(feature_c, dtype=np.float32)
-            np.save(feature_c_path, feature_c)
-
-        # { chromosome : (hash_idx, bucket_idx, distance) }
-        return {
-            c: np.load(os.path.join(self.feature_fold, c, "feature.npy"))
-            for c in chromosome
-        }
-
-    """ applyFeature """
-
-    def applyFeature(
-        self, embd_fold: str | list[str], chromosome: str, top_k: float = 0.15,
-        return_feature: bool = False
-    ) -> dict[int, np.ndarray] | None:
-        # transfer embd_fold str path to sample_idx in self.sample_map
-        sample_idx = self.fold2idx(embd_fold)
-
-        # get selected feature of chromosome
-        # (hash_idx, bucket_idx, distance)
-        feature_c = self.getFeature(chromosome)[chromosome]
-        # select top_k percent of feature with largest distance
-        top_k = int(len(feature_c) * top_k)
-        order = np.sort(np.argsort(feature_c[:, 2])[-top_k:])
-        feature_c = feature_c[order]
-        # split by hash_idx
-        feature_c = feature_c[:, :2].astype(int)
-        hash_idx, hash2bucket = np.unique(feature_c[:, 0], return_index=True)
-        hash_idx = hash_idx.tolist()
-        hash2bucket = np.concatenate([hash2bucket, [len(feature_c)]])
-        hash2bucket = {
-            hash_idx[h]: feature_c[hash2bucket[h]:hash2bucket[h+1], 1].tolist()
-            for h in range(len(hash_idx))
-        }
-
-        # apply feature for each sample
-        # (:768 embd, 768 pos, 769 embd_idx)
-        for s in sample_idx:
-            # check if feature of sample s already get
-            feature_s_path = os.path.join(
-                self.sample_map.loc[s, "embd_fold"], chromosome, "feature.npy"
-            )
-            if os.path.exists(feature_s_path) and \
-            len(np.load(feature_s_path)) == len(feature_c): 
-                continue
-            # loop through hash_idx to find feature of sample s
-            feature_s = np.zeros((0, 768+2), dtype=np.float32)
-            for h in tqdm.tqdm(
-                hash_idx, dynamic_ncols=True, smoothing=0,
-                unit="hash", desc=f"applyFeature {chromosome} {s}"
-            ):
-                # { bucket_idx : 
-                # (:768 embd, 768 pos, 769 sample_idx, 770 embd_idx) }
-                embd = self.getEmbd(s, chromosome, h)
-                for b in hash2bucket[h]:
-                    if embd is None or b not in embd.keys():
-                        feature_s = np.concatenate([
-                            feature_s, 
-                            np.full((1, 768+2), np.nan, dtype=np.float32)
-                        ])
-                        continue
-                    # choose the read that close to the center of the bucket
-                    center = embd[b][:, 768]%self.hash_size%self.bucket_size
-                    center = np.abs(center-(self.bucket_size/2))
-                    center = np.argmin(center)
-                    feature_s = np.vstack([
-                        feature_s, 
-                        np.hstack([embd[b][center, :769], embd[b][center, 770]])
-                    ])
-            # save
-            os.makedirs(os.path.dirname(feature_s_path), exist_ok=1)
-            np.save(feature_s_path, feature_s)
-
-        # { sample_idx : (:768 embd, 768 pos, 769 embd_idx) }
-        if return_feature is False: return None
-        return {
-            s: np.load(os.path.join(
-                self.sample_map.loc[s, "embd_fold"], chromosome, "feature.npy"
-            )) for s in sample_idx
-        }
-
-    """ TODO: getRepresentation """
-
-    def getRepresentation():
-        """
-        TODO: run fit and transform
-        """
-        pass
-
-    def fit():
-        """
-        TODO:
-        1. check if pca and mean already stored in folder pca
-        2. run applyFeature for sample in self.profile
-        3. get the mean of all not nan part
-        4. store the mean in folder pca for future use
-        5. replace nan with mean
-        6. run pca on all embd, store pca in folder pca for future use
-        """
-        pass
-
-    def transform():
-        """
-        TODO:
-        1. check if pca and mean already stored in folder pca
-        2. run applyFeature for input embd_fold
-        3. replace nan with mean and transform with pca
-        """
-        pass
-
-    """ help function """
-
-    def fold2idx(self, embd_fold: str | list[str]) -> list[int]:
-        if isinstance(embd_fold, str): embd_fold = [embd_fold]
-        # if embd_fold not in self.sample_map, add to end of self.sample_map
-        # this step make sure embd_fold can be indexed in self.sample_map
-        for i in embd_fold:
-            fold = os.path.abspath(i)
-            if fold not in self.sample_map["embd_fold"].values:
-                self.sample_map.loc[len(self.sample_map), "embd_fold"] = fold
-        self.sample_map.to_csv(self.sample_map_path)
-        # since all embd_fold can be indexed in self.sample_map, transfer 
-        # embd_fold from str fold path to index in self.sample_map
-        sample_idx = [int(self.sample_map[
-            self.sample_map["embd_fold"]==os.path.abspath(i)
-        ].index[0]) for i in embd_fold]
-        return sample_idx
-
-    def getEmbd(
+    def _getEmbdByIdx(
         self, sample_idx: int | list[int], chromosome: str, hash_idx: int
     ) -> dict[int, np.ndarray] | None:
         if isinstance(sample_idx, int): sample_idx = [sample_idx]
@@ -334,6 +181,177 @@ class Selector:
         # { bucket_idx : (:768 embd, 768 pos, 769 sample_idx, 770 embd_idx) }
         bucket_idx = embd[:, 768] % self.hash_size // self.bucket_size
         return {int(b): embd[bucket_idx==b] for b in np.unique(bucket_idx)}
+
+    """ applyFeature """
+
+    def applyFeature(
+        self, embd_fold: str | list[str], chromosome: str, top_k: float = 0.15
+    ) -> None:
+        if isinstance(embd_fold, str): embd_fold = [embd_fold]
+
+        # get selected feature of chromosome
+        # (hash_idx, bucket_idx, distance)
+        feature_c = self.getFeature(chromosome)[chromosome]
+        # select top_k percent of feature with largest distance
+        top_k = int(len(feature_c) * top_k)
+        order = np.sort(np.argsort(feature_c[:, 2])[-top_k:])
+        feature_c = feature_c[order]
+        # split by hash_idx
+        feature_c = feature_c[:, :2].astype(int)
+        hash_idx, hash2bucket = np.unique(feature_c[:, 0], return_index=True)
+        hash_idx = hash_idx.tolist()
+        hash2bucket = np.concatenate([hash2bucket, [len(feature_c)]])
+        hash2bucket = {
+            hash_idx[h]: feature_c[hash2bucket[h]:hash2bucket[h+1], 1].tolist()
+            for h in range(len(hash_idx))
+        }
+
+        # apply feature for each sample
+        # (:768 embd, 768 pos, 769 embd_idx)
+        for e in range(len(embd_fold)):
+            # check if feature of sample s already get
+            feature_s_path = os.path.join(
+                embd_fold[e], chromosome, "feature.npy"
+            )
+            if os.path.exists(feature_s_path) and \
+            len(np.load(feature_s_path)) == len(feature_c): 
+                continue
+            # loop through hash_idx to find feature of sample s
+            feature_s = np.zeros((0, 768+2), dtype=np.float32)
+            for h in tqdm.tqdm(
+                hash_idx, dynamic_ncols=True, smoothing=0,
+                unit="hash", desc=f"applyFeature/{e}/{chromosome} "
+            ):
+                # { bucket_idx : (:768 embd, 768 pos, 769 embd_idx) }
+                embd = self._getEmbdByFold(embd_fold[e], chromosome, h)
+                for b in hash2bucket[h]:
+                    if embd is None or b not in embd.keys():
+                        feature_s = np.concatenate([
+                            feature_s, 
+                            np.full((1, 768+2), np.nan, dtype=np.float32)
+                        ])
+                        continue
+                    # choose the read that close to the center of the bucket
+                    center = embd[b][:, 768]%self.hash_size%self.bucket_size
+                    center = np.abs(center-(self.bucket_size/2))
+                    center = np.argmin(center)
+                    feature_s = np.vstack([feature_s, embd[b][center]])
+            # save
+            os.makedirs(os.path.dirname(feature_s_path), exist_ok=1)
+            np.save(feature_s_path, feature_s)
+
+    def getFeature(
+        self, chromosome: str | list[str] = None
+    ) -> dict[str, np.ndarray]:
+        # input check
+        if chromosome is None: 
+            chromosome = [str(i) for i in range(1, 23)] + ["X"]
+        if isinstance(chromosome, str): chromosome = [chromosome]
+
+        # get feature of each chromosome
+        for c in chromosome:
+            # check if feature of current chromosome already get
+            feature_c_path = os.path.join(self.feature_fold, c, "feature.npy")
+            if os.path.exists(feature_c_path): continue
+            # get feature of current chromosome by loop through all hash_idx
+            feature_c = []
+            for hash_idx in tqdm.tqdm(
+                range(self.hash_idx_max[c]), 
+                dynamic_ncols=True, smoothing=0, 
+                unit="hash", desc=f"getFeature/{c}",
+            ):
+                # load feature
+                hash_fold = f"{hash_idx:06d}.npy"[:3]
+                hash_file = f"{hash_idx:06d}.npy"[3:]
+                feature_ch_path = os.path.join(
+                    self.feature_fold, c, hash_fold, hash_file
+                )
+                if not os.path.exists(feature_ch_path): continue
+                feature_ch = np.load(feature_ch_path)
+                # get max distance of each bucket
+                bucket_idx = feature_ch[:, 1]%self.hash_size//self.bucket_size
+                for b in np.unique(bucket_idx):
+                    feature_c.append([
+                        hash_idx, b, np.max(feature_ch[bucket_idx==b][:, 3])
+                    ])
+            # to ndarray and save
+            feature_c = np.array(feature_c, dtype=np.float32)
+            np.save(feature_c_path, feature_c)
+
+        # { chromosome : (hash_idx, bucket_idx, distance) }
+        return {
+            c: np.load(os.path.join(self.feature_fold, c, "feature.npy"))
+            for c in chromosome
+        }
+
+    def _getEmbdByFold(
+        self, embd_fold: str, chromosome: str, hash_idx: int
+    ) -> dict[int, np.ndarray] | None:
+        # load embd at hash_idx
+        # (:768 embd, 768 pos, 769 embd_idx)
+        hash_fold = f"{hash_idx:06d}.npy"[:3]
+        hash_file = f"{hash_idx:06d}.npy"[3:]
+        sample_path = os.path.join(embd_fold, chromosome, hash_fold, hash_file)
+        if not os.path.exists(sample_path): return None
+        embd = np.load(sample_path)[:, :769]    # (:768 embd, 768 pos)
+        # add embd_idx to column 769
+        embd = np.column_stack([embd, np.arange(len(embd), dtype=np.float32)])
+        # if no embd, means no sample cover this hash_idx, return
+        if len(embd) == 0: return None
+        # split embd by bucket_idx
+        # { bucket_idx : (:768 embd, 768 pos, 769 embd_idx) }
+        bucket_idx = embd[:, 768] % self.hash_size // self.bucket_size
+        return {int(b): embd[bucket_idx==b] for b in np.unique(bucket_idx)}
+
+    """ getIPCA (train) """
+
+    def getIPCA(
+        self, embd_fold: str | list[str] = None, batch_size: int = 1
+    ) -> sklearn.decomposition.IncrementalPCA:
+        # load or init ipca
+        ipca_path = os.path.join(self.feature_fold, "ipca.pkl")
+        if os.path.exists(ipca_path):
+            with open(ipca_path, "rb") as f: ipca = pickle.load(f)
+        else: ipca = sklearn.decomposition.IncrementalPCA(
+            n_components=1, copy=False
+        )
+        if embd_fold is None: return ipca
+
+        if isinstance(embd_fold, str): embd_fold = [embd_fold]
+
+        # partial fit ipca
+        batch = 0
+        feature = []
+        for e in tqdm.tqdm(
+            embd_fold, dynamic_ncols=True, smoothing=0,
+            unit="sample", desc="getIPCA",
+        ):
+            # load feature of sample s
+            for c in [str(i) for i in range(1, 23)] + ["X"]:
+                feature.append(np.load(os.path.join(e, c, "feature.npy")))
+            batch += 1
+            if batch % batch_size != 0: continue
+            # partial fit ipca
+            feature = np.vstack(feature)
+            feature = feature[~np.isnan(feature).any(axis=1)]
+            ipca = ipca.partial_fit(feature)
+            feature = []
+        if len(feature) != 0:
+            feature = np.vstack(feature)
+            feature = feature[~np.isnan(feature).any(axis=1)]
+            ipca = ipca.partial_fit(feature)
+
+        # save ipca
+        os.makedirs(os.path.dirname(ipca_path), exist_ok=1)
+        with open(ipca_path, "wb") as f: pickle.dump(ipca, f)
+        return ipca
+
+    """ getRepresentation """
+
+    def getRepresentation():
+        pass
+
+    """ help function """
 
     @staticmethod
     def calMaxEuclideanDist(
