@@ -16,12 +16,15 @@ class Selector:
     def __init__(self, feature_fold: str, bucket_size: int = 100) -> None:
         self.feature_fold = feature_fold
         if not os.path.exists(self.feature_fold): os.makedirs(self.feature_fold)
-        # sample map, for transformation between sample_idx and embd_fold 
+        # sample map
+        # transformation between sample_idx and embd_fold 
         self.sample_map_path = os.path.join(self.feature_fold, "sample_map.csv")
         if os.path.exists(self.sample_map_path):
             self.sample_map = pd.read_csv(self.sample_map_path, index_col=0)
         else:
             self.sample_map = pd.DataFrame(columns=["embd_fold"])
+        # chromosome
+        self.chromosome_list = [str(i) for i in range(1, 23)] + ["X"]
         # hash
         self.hash_size = 1000
         self.hash_idx_max = {
@@ -46,7 +49,9 @@ class Selector:
         self, embd_fold: str | list[str], 
         chromosome: str, hash_idx_start: int = 0, hash_idx_end: int = 249000,
     ) -> None:
+        # input check
         if isinstance(embd_fold, str): embd_fold = [embd_fold]
+
         # if embd_fold not in self.sample_map, add to end of self.sample_map
         # this step make sure embd_fold can be indexed in self.sample_map
         for i in embd_fold:
@@ -187,6 +192,7 @@ class Selector:
     def applyFeature(
         self, embd_fold: str | list[str], chromosome: str, top_k: float = 0.15
     ) -> None:
+        # input check
         if isinstance(embd_fold, str): embd_fold = [embd_fold]
 
         # get selected feature of chromosome
@@ -244,8 +250,7 @@ class Selector:
         self, chromosome: str | list[str] = None
     ) -> dict[str, np.ndarray]:
         # input check
-        if chromosome is None: 
-            chromosome = [str(i) for i in range(1, 23)] + ["X"]
+        if chromosome is None: chromosome = self.chromosome_list
         if isinstance(chromosome, str): chromosome = [chromosome]
 
         # get feature of each chromosome
@@ -308,6 +313,9 @@ class Selector:
     def getIPCA(
         self, embd_fold: str | list[str] = None, batch_size: int = 1
     ) -> sklearn.decomposition.IncrementalPCA:
+        # input check
+        if isinstance(embd_fold, str): embd_fold = [embd_fold]
+
         # load or init ipca
         ipca_path = os.path.join(self.feature_fold, "ipca.pkl")
         if os.path.exists(ipca_path):
@@ -317,8 +325,6 @@ class Selector:
         )
         if embd_fold is None: return ipca
 
-        if isinstance(embd_fold, str): embd_fold = [embd_fold]
-
         # partial fit ipca
         batch = 0
         feature = []
@@ -326,8 +332,8 @@ class Selector:
             embd_fold, dynamic_ncols=True, smoothing=0,
             unit="sample", desc="getIPCA",
         ):
-            # load feature of sample s
-            for c in [str(i) for i in range(1, 23)] + ["X"]:
+            # load feature
+            for c in self.chromosome_list:
                 feature.append(np.load(os.path.join(e, c, "feature.npy")))
             batch += 1
             if batch % batch_size != 0: continue
@@ -346,10 +352,39 @@ class Selector:
         with open(ipca_path, "wb") as f: pickle.dump(ipca, f)
         return ipca
 
-    """ getRepresentation """
+    """ getRepre """
 
-    def getRepresentation():
-        pass
+    def getRepre(
+        self, embd_fold: str | list[str], save_path: str = None
+    ) -> np.ndarray:
+        # input check
+        if isinstance(embd_fold, str): embd_fold = [embd_fold]
+
+        # load trained ipca
+        ipca = self.getIPCA()
+
+        # use ipca to transform embd to representation
+        repre = []
+        for e in tqdm.tqdm(
+            embd_fold, dynamic_ncols=True, smoothing=0,
+            unit="sample", desc="getRepre",
+        ):
+            # load feature
+            feature = []
+            for c in self.chromosome_list:
+                feature.append(np.load(os.path.join(e, c, "feature.npy")))
+            feature = np.vstack(feature)
+            # nan to 0 so that transform nan row to 0
+            feature = np.nan_to_num(feature, nan=0.0)
+            # transform
+            repre.append(ipca.transform(feature))
+        repre = np.hstack(repre).T
+
+        # save
+        if save_path is not None:
+            os.makedirs(os.path.dirname(save_path), exist_ok=1)
+            np.save(save_path, repre)
+        return repre
 
     """ help function """
 
