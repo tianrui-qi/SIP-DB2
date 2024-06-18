@@ -28,19 +28,20 @@ def seq2embdArgs(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "-E", type=str, required=True, dest="embd_save_fold",
         help="Fold to save the embedding. Sturcture `data_fold/embd/$id` " + 
-        "is recommended. Each chromosome's embedding will be saved under " + 
-        "this fold seperately as `$chr.npy` , a N by 776 numpy array where N " +
-        "for number of reads. For each read, `[0:768]` is the embedding, " + 
-        "`[768]` is the pos, and `[769:776]` is num of variants cover by " + 
-        "each read with different p-value threshold. Note that `[768:776]` " + 
-        "directly copy from columns `pos`, `1e+00`, `1e-01`, `1e-02`, " + 
-        "`1e-03`, `1e-04`, `1e-05`, and `1e-06` of HDF5 file " + 
-        "`-H HDF_LOAD_PATH`. If `$chr.npy` already exists, check if the " + 
-        "reads number of that chromosome in the HDF5 file after filtering is " +
-        "larger than that in $chr.npy. If so, means the chromosome is not " + 
-        "fully processed because the function run with a smaller p-value " + 
-        "threshold before, and the function will reprocess the chromosome; " + 
-        "if not, skip that chromosome."
+        "is recommended. Each chromosome's embedding saves under " + 
+        "`data_fold/embd/$id/$c` in hash structure indexed by pos of each " + 
+        "read, i.e., `data_fold/embd/$id/$c/$hash_fold/$hash_file.npy`. We " + 
+        "format pos of read into 9 digits int, use first 3 digits as " + 
+        "hash_fold, second 3 digits as hash_file, and last 3 digits " + 
+        "(1000 bp) store in each `.npy`. For example, for read with pos " + 
+        "78034 in chromosome 11, it will store in " + 
+        "`data_fold/embd/$id/11/000/078.npy`. Each `.npy` is a N by 776 " + 
+        "numpy array where N for number of reads. For each read, `[0:768]` " + 
+        "is the embedding, `[768]` is the pos, and `[769:776]` is num of " + 
+        "variants cover by each read with different p-value threshold. " + 
+        "Note that `[768:776]` directly copy from columns `pos`, `1e+00`, " + 
+        "`1e-01`, `1e-02`, `1e-03`, `1e-04`, `1e-05`, and `1e-06` of HDF5 " + 
+        "file `-H HDF_LOAD_PATH`."
     )
     parser.add_argument(
         "-C", type=str, required=False, dest="ckpt_load_path", default=None,
@@ -86,28 +87,17 @@ def seq2embd(
 
     pval_thresh_list = [1e-0, 1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6]
 
-    for chr in tqdm.tqdm(
+    for c in tqdm.tqdm(
         [str(i) for i in range(1, 23)] + ["X"],     # BAM naming convention
         unit="chr", desc=embd_save_fold, smoothing=0.0, dynamic_ncols=True,
     ):
-        embd_save_path = os.path.join(embd_save_fold, f"{chr}.npy")
-
         # get the hdf that store sequence and p-value for filtering
-        hdf = pd.read_hdf(hdf_load_path, key=f"/chr{chr}", mode="r")
+        hdf = pd.read_hdf(hdf_load_path, key=f"/chr{c}", mode="r")
         hdf = hdf[hdf[f"{pval_thresh:.0e}"]>=1]
 
-        # check if chromosome already processed
-        if os.path.exists(embd_save_path):
-            embd = np.load(embd_save_path)
-            if len(embd) >= len(hdf):
-                tqdm.tqdm.write(
-                    f"{embd_save_path} already processed, skip."
-                )
-                continue
-
-        embedding = None
+        embd = None
         for i in tqdm.tqdm(
-            range(int(np.ceil(len(hdf)/batch_size))), desc=chr, leave=False,
+            range(int(np.ceil(len(hdf)/batch_size))), desc=c, leave=False,
             unit="batch", smoothing=0.0, dynamic_ncols=True,
         ):
             # sequence
@@ -120,7 +110,7 @@ def seq2embd(
             )["input_ids"].to(device)
 
             # chr
-            chr_batch = int(chr) if chr != "X" else 23
+            chr_batch = int(c) if c != "X" else 23
             chr_batch = torch.ones(len(sequence_batch)) * chr_batch
             # pos
             pos_batch = torch.tensor(hdf["pos"].iloc[
@@ -139,36 +129,22 @@ def seq2embd(
                     token_batch, coord_batch, embedding=True
                 ).detach().cpu().numpy()
             # save
-            embedding = np.concatenate(
-                [embedding, embedding_batch], axis=0
-            ) if embedding is not None else embedding_batch
-
-        # save
-        result: np.ndarray = np.concatenate([
+            embd = np.concatenate(
+                [embd, embedding_batch], axis=0
+            ) if embd is not None else embedding_batch
+        embd: np.ndarray = np.concatenate([
             # [0:768] for embedding
-            embedding,
+            embd,
             # [768] for position                       
             hdf["pos"].to_numpy().reshape(-1, 1),
-            # [769:776] for # of variants with p-value <= 1e-[0:7] cover by the read
+            # [769:776] for # of variants with p-value <= 1e-[0:7] cover by read
             np.concatenate([
                 hdf[f"{_:.0e}"].to_numpy().reshape(-1, 1)
                 for _ in pval_thresh_list
             ], axis=1, dtype=np.float32)
         ], axis=1, dtype=np.float32)
-        if not os.path.exists(embd_save_fold): os.makedirs(embd_save_fold)
-        np.save(os.path.join(embd_save_fold, f"{chr}.npy"), result)
-
-
-def embd2hash(
-    embd_load_fold: str, hash_save_fold: str, *vargs, **kwargs
-) -> None:
-    for chromosome in tqdm.tqdm(
-        [str(i) for i in range(1, 23)] + ["X"],     # BAM naming convention
-        unit="chr", desc=hash_save_fold, smoothing=0.0, dynamic_ncols=True,
-    ):
-        # read embd of given sample id and chromosome
-        embd = np.load(os.path.join(embd_load_fold, f"{chromosome}.npy"))
         embd = embd[embd[:, 768].argsort()]
+
         # bucket and bucket2pos
         bucket, bucket2pos = np.unique(embd[:,  768]//1000, return_index=True)
         bucket2pos = np.concatenate((bucket2pos, [len(embd)]))
@@ -177,16 +153,15 @@ def embd2hash(
         # store file in bucket
         for b in tqdm.tqdm(
             range(len(bucket)), leave=False,
-            unit="bucket", desc=chromosome, smoothing=0.0, dynamic_ncols=True,
+            unit="bucket", desc=c, smoothing=0.0, dynamic_ncols=True,
         ):
             embd_bucket = embd[bucket2pos[b]:bucket2pos[b+1]]
             hash_idx = f"{bucket[b]:06d}"
             hash_fold, hash_file = hash_idx[:3], hash_idx[3:]+".npy"
             os.makedirs(
-                os.path.join(hash_save_fold, chromosome, hash_fold),
-                exist_ok=True
+                os.path.join(embd_save_fold, c, hash_fold), exist_ok=True
             )
             np.save(
-                os.path.join(hash_save_fold, chromosome, hash_fold, hash_file), 
+                os.path.join(embd_save_fold, c, hash_fold, hash_file), 
                 embd_bucket
             )
