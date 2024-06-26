@@ -17,3 +17,46 @@ conda activate SIP-DB2
 # uninstall triton to solve env problem
 pip uninstall triton
 ```
+
+## Data Structure
+
+```
+/mnt/efs_v2/dbgap_tcga/users/tianrui.qi/SIP-DB2/data/
+├── snps.csv
+├── label.csv
+├── profile.csv         # samples profile of stanford and tcgaskcm dataset
+├── fastq/              # unaligned reads
+│   ├── SRR8924580/         # sample id
+│   │   ├── *R1.fastq.gz        # read 1
+│   │   └── *R2.fastq.gz        # read 2
+│   └── ...
+├── ref/                # reference for alignment
+│   ├── ref.fa              # reference genome
+│   └── ...                 # corresponding index
+├── bwa-mem2-2.2.1_x64-linux
+├── sam/                # aligned reads by bwa-mem2
+│   ├── SRR8924580.sam
+│   └── ...
+├── bam/                # sorted aligned reads by Samtools
+│   ├── SRR8924580.bam      # sorted bam file
+│   ├── SRR8924580.bam.bai  # corresponding index
+│   └── ...
+├── hdf/                # reads' variant num with diff p-val thresh
+│   ├── SRR8924580.h5
+│   ├── ...
+│   ├── TCGA-3N-A9WB-06A.h5
+│   └── ...
+├── embd/               # embedding by pretrain model
+│   ├── SRR8924580/
+│   │   ├── 1/                  # chromosome 1
+│   │   │   ├── 000/
+│   │   │   │   ├── 000.npy
+│   │   │   │   └── ...
+│   │   │   ├── ...
+│   │   │   └── feature.npy         # embd after feature selection
+│   │   ├── ...
+│   │   └── X/
+│   ├── ...
+│   ├── TCGA-3N-A9WB-06A/
+│   └── ...
+```

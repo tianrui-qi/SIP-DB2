@@ -317,22 +317,16 @@ class Selector:
     ) -> sklearn.decomposition.IncrementalPCA:
         """
         To use embd_fold for train to partial fit IncrementalPCA,
-
             >>> import pandas as pd
             >>> from src import Selector
-            >>> # embd_fold
-            >>> profile = pd.read_csv("data/stanford/profile.csv")
-            >>> embd_fold  = profile["embd_fold"].to_list()
-            >>> profile = pd.read_csv("data/tcgaskcm/profile.csv")
-            >>> profile = profile[profile["train"] == 1]
-            >>> embd_fold += profile["embd_fold"].to_list()
-            >>> # getIPCA
+            >>> profile = pd.read_csv("data/profile.csv")
+            >>> profile = profile[profile["train"]==1]
+            >>> embd_fold = profile["embd_fold"].to_list()
             >>> selector = Selector("data/feature")
             >>> ipca = selector.getIPCA(embd_fold, batch_size=40)
-
-        To load the fitted IncrementalPCA, call self.getIPCA() without input,
-
+        To load and use the fitted IncrementalPCA,
             >>> ipca = Selector("data/feature").getIPCA()
+            >>> repre = ipac.transform(feature)
         """
 
         # input check
@@ -378,36 +372,45 @@ class Selector:
     """ getRepre """
 
     def getRepre(
-        self, embd_fold: str | list[str], save_path: str = None
-    ) -> np.ndarray:
+        self, embd_fold: str | list[str], repre_path: str | list[str]
+    ) -> None:
+        """
+        Example:
+            >>> import pandas as pd
+            >>> from src import Selector
+            >>> profile = pd.read_csv("data/profile.csv")
+            >>> embd_fold = profile["embd_fold"].to_list()
+            >>> repre_path = profile["repre_path"].to_list()
+            >>> Selector("data/feature").getRepre(embd_fold, repre_path)
+        """
+
         # input check
         if isinstance(embd_fold, str): embd_fold = [embd_fold]
+        if isinstance(repre_path, str): repre_path = [repre_path]
+        assert len(embd_fold) == len(repre_path)
 
-        # load trained ipca
         ipca = self.getIPCA()
-
-        # use ipca to transform embd to representation
-        repre = []
-        for e in tqdm.tqdm(
-            embd_fold, dynamic_ncols=True, smoothing=0,
+        for i in tqdm.tqdm(
+            range(len(embd_fold)), dynamic_ncols=True, smoothing=0,
             unit="sample", desc="getRepre",
         ):
+            # check path
+            if not isinstance(embd_fold[i], str): continue
+            if not isinstance(repre_path[i], str): continue
+            if not os.path.exists(embd_fold[i]): continue
             # load feature (:768 embd, 768 pos, 769 embd_idx)
-            feature = []
-            for c in self.chromosome_list:
-                feature.append(np.load(os.path.join(e, c, "feature.npy")))
+            feature = [
+                np.load(os.path.join(embd_fold[i], c, "feature.npy"))
+                for c in self.chromosome_list
+            ]
             feature = np.vstack(feature)[:, :768]
             # nan to 0 so that transform nan row to 0
             feature = np.nan_to_num(feature, nan=0.0)
             # transform
-            repre.append(ipca.transform(feature))
-        repre = np.hstack(repre).T
-
-        # save
-        if save_path is not None:
-            os.makedirs(os.path.dirname(save_path), exist_ok=1)
-            np.save(save_path, repre)
-        return repre
+            repre = ipca.transform(feature).T
+            # save
+            os.makedirs(os.path.dirname(repre_path[i]), exist_ok=1)
+            np.save(repre_path[i], repre)
 
     """ help function """
 

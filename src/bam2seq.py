@@ -13,7 +13,7 @@ __all__ = ["bam2seqArgs", "bam2seq"]
 def bam2seqArgs(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "-B", type=str, required=True, dest="bam_load_path",
-        help="Path to load the BAM file. Sturcture `data_fold/bam/$id.bam` " + 
+        help="Path to load the BAM file. Sturcture `data/bam/$sample.bam` " + 
         "is recommended."
     )
     parser.add_argument(
@@ -22,7 +22,7 @@ def bam2seqArgs(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "-H", type=str, required=True, dest="hdf_save_path",
-        help="Path to save the HDF5 file. Sturcture `data_fold/hdf/$id.h5` " + 
+        help="Path to save the HDF5 file. Sturcture `data/hdf/$sample.h5` " + 
         "is recommended."
     )
     parser.add_argument(

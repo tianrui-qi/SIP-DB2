@@ -22,20 +22,20 @@ warnings.filterwarnings("ignore", message="Unable to import Triton*")
 def seq2embdArgs(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "-H", type=str, required=True, dest="hdf_load_path",
-        help="Path to load the HDF5 file. Sturcture `data_fold/hdf/$id.h5` " + 
+        help="Path to load the HDF5 file. Sturcture `data/hdf/$sample.h5` " + 
         "is recommended."
     )
     parser.add_argument(
         "-E", type=str, required=True, dest="embd_save_fold",
-        help="Fold to save the embedding. Sturcture `data_fold/embd/$id` " + 
+        help="Fold to save the embedding. Sturcture `data/embd/$sample` " + 
         "is recommended. Each chromosome's embedding saves under " + 
-        "`data_fold/embd/$id/$c` in hash structure indexed by pos of each " + 
-        "read, i.e., `data_fold/embd/$id/$c/$hash_fold/$hash_file.npy`. We " + 
+        "`data/embd/$sample/$c` in hash structure indexed by pos of each " + 
+        "read, i.e., `data/embd/$sample/$c/$hash_fold/$hash_file.npy`. We " + 
         "format pos of read into 9 digits int, use first 3 digits as " + 
         "hash_fold, second 3 digits as hash_file, and last 3 digits " + 
         "(1000 bp) store in each `.npy`. For example, for read with pos " + 
         "78034 in chromosome 11, it will store in " + 
-        "`data_fold/embd/$id/11/000/078.npy`. Each `.npy` is a N by 776 " + 
+        "`data/embd/$sample/11/000/078.npy`. Each `.npy` is a N by 776 " + 
         "numpy array where N for number of reads. For each read, `[0:768]` " + 
         "is the embedding, `[768]` is the pos, and `[769:776]` is num of " + 
         "variants cover by each read with different p-value threshold. " + 
