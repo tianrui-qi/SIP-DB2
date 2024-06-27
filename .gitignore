@@ -1,5 +1,5 @@
 ckpt/
-data/
+data/**
 runs/
 
 # temp folder and files
@@ -12,3 +12,9 @@ runs/
 **/.idea/
 **/.vscode/
 **/.DS_Store
+
+# backup
+!data/label.csv
+!data/profile.csv
+!data/feature
+!data/feature/sample_map.csv
