@@ -141,11 +141,12 @@ class Selector:
 
         ## calculate max distance and update feature
         for b in new_embd.keys():
-            dist = Selector.calMaxEuclideanDist(
+            new_dist, all_dist = Selector.calMaxEuclideanDist(
                 new_embd[b][:, :768], 
                 np.concatenate([old_embd[b][:, :768], new_embd[b][:, :768]])
             )
-            feature[b][:, 3] = np.maximum(feature[b][:, 3], dist)
+            all_dist[-len(new_dist):] = new_dist
+            feature[b][:, 3] = np.maximum(feature[b][:, 3], all_dist)
 
         ## save feature
         feature = np.concatenate([feature[b] for b in feature.keys()])
@@ -344,25 +345,29 @@ class Selector:
 
         # partial fit ipca
         batch = 0
-        feature = []
+        features = []
         for e in tqdm.tqdm(
             embd_fold, dynamic_ncols=True, smoothing=0,
             unit="sample", desc="getIPCA",
         ):
             # load feature (:768 embd, 768 pos, 769 embd_idx)
-            for c in self.chromosome_list:
-                feature.append(np.load(os.path.join(e, c, "feature.npy")))
+            feature = np.vstack([
+                np.load(os.path.join(e, c, "feature.npy"))
+                for c in self.chromosome_list
+            ])[:, :768].T                       # [768, K]
+            features.append(feature)
             batch += 1
             if batch % batch_size != 0: continue
             # partial fit ipca
-            feature = np.vstack(feature)[:, :768]
-            feature = feature[~np.isnan(feature).any(axis=1)]
-            ipca = ipca.partial_fit(feature)
-            feature = []
-        if len(feature) != 0:
-            feature = np.vstack(feature)[:, :768]
-            feature = feature[~np.isnan(feature).any(axis=1)]
-            ipca = ipca.partial_fit(feature)
+            features = np.vstack(features)      # [768 * batch_size, K]
+            np.nan_to_num(features, nan=0.0, copy=False)
+            ipca = ipca.partial_fit(features)
+            features = []
+        if len(features) != 0:
+            features = np.vstack(features)      # [768 * batch_size, K]
+            np.nan_to_num(features, nan=0.0, copy=False)
+            ipca = ipca.partial_fit(features)
+            features = []
 
         # save ipca
         os.makedirs(os.path.dirname(ipca_path), exist_ok=1)
@@ -399,15 +404,13 @@ class Selector:
             if not isinstance(repre_path[i], str): continue
             if not os.path.exists(embd_fold[i]): continue
             # load feature (:768 embd, 768 pos, 769 embd_idx)
-            feature = [
+            feature = np.vstack([
                 np.load(os.path.join(embd_fold[i], c, "feature.npy"))
                 for c in self.chromosome_list
-            ]
-            feature = np.vstack(feature)[:, :768]
-            # nan to 0 so that transform nan row to 0
-            feature = np.nan_to_num(feature, nan=0.0)
+            ])[:, :768].T                       # [768, K]
+            np.nan_to_num(feature, nan=0.0, copy=False)
             # transform
-            repre = ipca.transform(feature).T
+            repre = ipca.transform(feature)     # [768, 1]
             # save
             os.makedirs(os.path.dirname(repre_path[i]), exist_ok=1)
             np.save(repre_path[i], repre)
@@ -431,21 +434,30 @@ class Selector:
             batch_size: int, default 10000
 
         Returns:
+            x1dist: np.ndarray, shape (Ni,)
+                Max distance of axis 1 of Euclidean distance matrix between x1
+                and x2
             x2dist: np.ndarray, shape (Nj,)
                 Max distance of axis 0 of Euclidean distance matrix between x1 
                 and x2
 
         Example:
+            >>> import torch
+            >>> import numpy as np
+            >>> from src import Selector
             >>> x1 = np.random.rand(25000, 10)
             >>> x2 = np.random.rand(25000, 10)
             >>> # torch.cdist
             >>> dist_matrix = torch.cdist(
             ...     torch.from_numpy(x1), torch.from_numpy(x2)
             ... ).numpy()
+            >>> x1dist_torch = np.max(dist_matrix, axis=1)
             >>> x2dist_torch = np.max(dist_matrix, axis=0)
             >>> # Selector.calMaxEuclideanDist
-            >>> x2dist_our = calMaxEuclideanDist(x1, x2)
+            >>> x1dist_our, x2dist_our = Selector.calMaxEuclideanDist(x1, x2)
             >>> # check if the results are the same
+            >>> print(np.allclose(x1dist_torch, x1dist_our))
+            True
             >>> print(np.allclose(x2dist_torch, x2dist_our))
             True
         """
@@ -456,6 +468,7 @@ class Selector:
         x1batchnum = (x1.shape[0] + batch_size - 1) // batch_size
         x2batchnum = (x2.shape[0] + batch_size - 1) // batch_size
 
+        x1dist = torch.full((len(x1),), float('-inf'))
         x2dist = torch.full((len(x2),), float('-inf'))
         for i in range(x1batchnum):
             start_i = i * batch_size
@@ -467,12 +480,15 @@ class Selector:
                 x2_batch = x2[start_j:end_j]
                 # compute the distance matrix between x1_batch and x2_batch
                 dist_matrix = torch.cdist(x1_batch, x2_batch)
-                # update the max distances for x2 using the max distances of 
+                # update the max distances for x1, x2 using the max distances of 
                 # current batch
+                x1dist[start_i:end_i] = torch.max(
+                    x1dist[start_i:end_i], torch.max(dist_matrix, dim=1).values
+                )
                 x2dist[start_j:end_j] = torch.max(
                     x2dist[start_j:end_j], torch.max(dist_matrix, dim=0).values
                 )
-        return x2dist.numpy()
+        return x1dist.numpy(), x2dist.numpy()
 
     @staticmethod
     def calPearsonCorrelation(x1: np.ndarray, x2: np.ndarray) -> np.ndarray:

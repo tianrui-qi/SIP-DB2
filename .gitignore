@@ -16,5 +16,3 @@ runs/
 # backup
 !data/label.csv
 !data/profile.csv
-!data/feature
-!data/feature/sample_map.csv
