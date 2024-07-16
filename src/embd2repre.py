@@ -12,6 +12,9 @@ import pickle
 __all__ = ["Selector"]
 
 
+torch.set_num_threads(os.cpu_count())
+
+
 class Selector:
     def __init__(self, feature_fold: str, bucket_size: int = 100) -> None:
         self.feature_fold = feature_fold
@@ -49,6 +52,38 @@ class Selector:
         self, embd_fold: str | list[str], 
         chromosome: str, hash_idx_start: int = 0, hash_idx_end: int = 249000,
     ) -> None:
+        """
+        Example: to add feature for chromsome 1,
+            >>> import torch
+            >>> import pandas as pd
+            >>> import os
+            >>> from src.embd2repre import Selector
+            >>> # sample to be added to the selector
+            >>> profile = pd.read_csv("data/profile.csv")
+            >>> profile = profile[profile["train"]==1]
+            >>> embd_fold = profile["embd_fold"].to_list()
+            >>> # selector
+            >>> selector = Selector("data/feature")
+            >>> # process chromosome 1 in 3 part parallel
+            >>> # can be further parallel by divide hash_idx into more parts
+            >>> selector.addFeature(
+            ...     embd_fold, chromosome="1", 
+            ...     hash_idx_start=     0, hash_idx_end= 80000
+            ... )
+            >>> selector.addFeature(
+            ...     embd_fold, chromosome="1", 
+            ...     hash_idx_start= 80000, hash_idx_end=160000
+            ... )
+            >>> selector.addFeature(
+            ...     embd_fold, chromosome="1", 
+            ...     hash_idx_start=160000
+            ... )
+        Example: process all chromosome in parallel with Slurm, refer to 
+        [add.py](https://github.com/tianrui-qi/SIP-DB2/blob/c02edf434d6b78d03cc8f97a6b31b7917dbe67a1/add.py)
+        and 
+        [add.sh](https://github.com/tianrui-qi/SIP-DB2/blob/c02edf434d6b78d03cc8f97a6b31b7917dbe67a1/add.sh)
+        """
+
         # input check
         if isinstance(embd_fold, str): embd_fold = [embd_fold]
 
@@ -261,13 +296,9 @@ class Selector:
         # apply feature for each sample
         # (:768 embd, 768 pos, 769 embd_idx)
         for e in range(len(embd_fold)):
-            # check if feature of sample s already get
-            feature_s_path = os.path.join(
-                embd_fold[e], chromosome, "feature.npy"
-            )
-            if os.path.exists(feature_s_path) and \
-            len(np.load(feature_s_path)) == len(feature_c): 
-                continue
+            # check path
+            if not isinstance(embd_fold[e], str): continue
+            if not os.path.exists(embd_fold[e]): continue
             # loop through hash_idx to find feature of sample s
             feature_s = []
             for h in tqdm.tqdm(
@@ -289,6 +320,9 @@ class Selector:
                     feature_s.append(embd[b][center])
             feature_s = np.vstack(feature_s, dtype=np.float32)
             # save
+            feature_s_path = os.path.join(
+                embd_fold[e], chromosome, "feature.npy"
+            )
             os.makedirs(os.path.dirname(feature_s_path), exist_ok=1)
             np.save(feature_s_path, feature_s)
 
@@ -317,7 +351,7 @@ class Selector:
         self, embd_fold: str | list[str] = None, batch_size: int = 1
     ) -> sklearn.decomposition.IncrementalPCA:
         """
-        To use embd_fold for train to partial fit IncrementalPCA,
+        Example: to use embd_fold for train to partial fit IncrementalPCA,
             >>> import pandas as pd
             >>> from src import Selector
             >>> profile = pd.read_csv("data/profile.csv")
@@ -325,7 +359,7 @@ class Selector:
             >>> embd_fold = profile["embd_fold"].to_list()
             >>> selector = Selector("data/feature")
             >>> ipca = selector.getIPCA(embd_fold, batch_size=40)
-        To load and use the fitted IncrementalPCA,
+        Example: to load and use the fitted IncrementalPCA,
             >>> ipca = Selector("data/feature").getIPCA()
             >>> repre = ipac.transform(feature)
         """
