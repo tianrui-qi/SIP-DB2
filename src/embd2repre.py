@@ -54,7 +54,6 @@ class Selector:
     ) -> None:
         """
         Example: to add feature for chromsome 1,
-            >>> import torch
             >>> import pandas as pd
             >>> import os
             >>> from src.embd2repre import Selector
@@ -78,10 +77,9 @@ class Selector:
             ...     embd_fold, chromosome="1", 
             ...     hash_idx_start=160000
             ... )
-        Example: process all chromosome in parallel with Slurm, refer to 
-        [add.py](https://github.com/tianrui-qi/SIP-DB2/blob/c02edf434d6b78d03cc8f97a6b31b7917dbe67a1/add.py)
-        and 
-        [add.sh](https://github.com/tianrui-qi/SIP-DB2/blob/c02edf434d6b78d03cc8f97a6b31b7917dbe67a1/add.sh)
+        Example: process all chromosome in parallel with Slurm,
+            [add.py](https://github.com/tianrui-qi/SIP-DB2/blob/c02edf434d6b78d03cc8f97a6b31b7917dbe67a1/add.py)
+            [add.sh](https://github.com/tianrui-qi/SIP-DB2/blob/c02edf434d6b78d03cc8f97a6b31b7917dbe67a1/add.sh)
         """
 
         # input check
@@ -273,6 +271,12 @@ class Selector:
     def applyFeature(
         self, embd_fold: str | list[str], chromosome: str, top_k: float = 0.15
     ) -> None:
+        """
+        Example: process all chromosome in parallel with Slurm,
+            [apply.py](https://github.com/tianrui-qi/SIP-DB2/blob/cc2b3f643ff49d2983f416b13d56e7e15e7154be/apply.py)
+            [apply.sh](https://github.com/tianrui-qi/SIP-DB2/blob/cc2b3f643ff49d2983f416b13d56e7e15e7154be/apply.sh)
+        """
+
         # input check
         if isinstance(embd_fold, str): embd_fold = [embd_fold]
 
