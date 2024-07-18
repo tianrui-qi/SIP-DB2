@@ -43,8 +43,7 @@ def bam2seq(
     pval_thresh_list = [1e-0, 1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6]
     chr_list = [str(i) for i in range(1, 23)] + ["X"]   # BAM naming convention
 
-    # load snps
-    snps_df = pd.read_csv(snps_load_path, usecols=["Chr", "Pos", "Pval"])
+    snps_df = None
 
     for chromosome in tqdm.tqdm(
         chr_list, unit="chromosome", 
@@ -54,10 +53,14 @@ def bam2seq(
         if os.path.exists(hdf_save_path):
             with pd.HDFStore(hdf_save_path, mode='r') as hdf:
                 if f"/chr{chromosome}" in hdf.keys():
-                    tqdm.tqdm.write(
-                        f"{hdf_save_path}/chr{chromosome} already processed, skip."
-                    )
+                    #tqdm.tqdm.write(
+                    #    f"{hdf_save_path}/chr{chromosome} already processed, skip."
+                    #)
                     continue
+        
+        # load snps
+        if snps_df is None:
+            snps_df = pd.read_csv(snps_load_path, usecols=["Chr", "Pos", "Pval"])
 
         snps_dict = {}
         for pval_thresh in pval_thresh_list:
