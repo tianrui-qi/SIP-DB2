@@ -16,7 +16,7 @@ matplotlib.use('Agg')
 
 def main() -> None:
     # parameters
-    data_fold = f"/mnt/efs_v2/dbgap_tcga/users/tianrui.qi/SIP-DB2/temp/slurm"
+    data_fold = f"/mnt/efs_v2/dbgap_tcga/users/tianrui.qi/SIP-DB2/temp/test"
     sample_name  = ["a", "b", "c", "d"]
     args_path = {
         "bam_path":     # list of bam path to be processed

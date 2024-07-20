@@ -41,21 +41,17 @@ pip uninstall triton
 │   ├── SRR8924580.bam      # sorted bam file
 │   ├── SRR8924580.bam.bai  # corresponding index
 │   └── ...
-├── hdf/                # reads' variant num with diff p-val thresh
-│   ├── SRR8924580.h5
-│   ├── ...
-│   ├── TCGA-3N-A9WB-06A.h5
-│   └── ...
-├── embd/               # embedding by pretrain model
+├── embd/
 │   ├── SRR8924580/
-│   │   ├── 1/                  # chromosome 1
+│   │   ├── 1/                  # chr 1 embedding
 │   │   │   ├── 000/
 │   │   │   │   ├── 000.npy
 │   │   │   │   └── ...
 │   │   │   ├── ...
-│   │   │   └── feature.npy         # embd after feature selection
+│   │   │   └── feature.npy         # chr 1 embedding after feature selection
 │   │   ├── ...
-│   │   └── X/
+│   │   ├── X/                  # chr X embedding
+│   │   └── sequence.h5         # sequence of sample
 │   ├── ...
 │   ├── TCGA-3N-A9WB-06A/
 │   └── ...

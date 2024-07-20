@@ -120,6 +120,17 @@ class Selector:
         # feature, including new_feature and old_feature)
         # { bucket_idx : (sample_idx, pos, embd_idx, distance) }
 
+        # load old feature to filter input sample_idx that already added
+        feature_path = os.path.join(
+            self.feature_fold, chromosome, hash_fold, hash_file
+        )
+        if os.path.exists(feature_path): 
+            feature = np.load(feature_path)
+            sample_idx = np.setdiff1d(
+                sample_idx, np.unique(feature[:, 0]).astype(int)
+            ).tolist()
+            if len(sample_idx) == 0: return
+
         ## new_embd/feature
         # load embd at hash_idx of all input sample_idx, split by bucket_idx
         new_embd = self.getEmbdByIdx(sample_idx, chromosome, hash_idx)
@@ -140,12 +151,8 @@ class Selector:
             b: np.zeros((0, 4), dtype=np.float32) for b in new_embd.keys()
         }
         # load and update old_embd/feature if feature_path exists
-        feature_path = os.path.join(
-            self.feature_fold, chromosome, hash_fold, hash_file
-        )
         if os.path.exists(feature_path): 
             # update old_feature
-            feature = np.load(feature_path)
             bucket_idx = feature[:, 1] % self.hash_size // self.bucket_size
             for b in np.unique(bucket_idx):
                 old_feature[int(b)] = feature[bucket_idx==b]
