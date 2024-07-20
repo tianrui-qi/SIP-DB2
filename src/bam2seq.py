@@ -4,35 +4,9 @@ import pandas as pd
 import os
 import tqdm
 import pysam
-import argparse
 
 
-__all__ = ["bam2seqArgs", "bam2seq"]
-
-
-def bam2seqArgs(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument(
-        "-B", type=str, required=True, dest="bam_load_path",
-        help="Path to load the BAM file. Sturcture `data/bam/$sample.bam` " + 
-        "is recommended."
-    )
-    parser.add_argument(
-        "-S", type=str, required=True, dest="snps_load_path",
-        help="Path to load the SNPs file contain genetic variation."
-    )
-    parser.add_argument(
-        "-H", type=str, required=True, dest="hdf_save_path",
-        help="Path to save the HDF5 file. Sturcture `data/hdf/$sample.h5` " + 
-        "is recommended."
-    )
-    parser.add_argument(
-        "-q", type=int, required=False, dest="quality_thresh", default=16,
-        help="Cut low quality bases at beginning and end of reads. Default: 16."
-    )
-    parser.add_argument(
-        "-l", type=int, required=False, dest="length_thresh", default=96,
-        help="Skip reads with length less than this value. Default: 96.",
-    )
+__all__ = ["bam2seq"]
 
 
 def bam2seq(

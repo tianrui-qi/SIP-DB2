@@ -7,65 +7,21 @@ import pandas as pd
 import os
 import tqdm
 import warnings
-import argparse
 
 from src.embd.model import PretrainModel, FinetuneModel
 
 
-__all__ = ["seq2embdArgs", "seq2embd"]
+__all__ = ["seq2embd"]
 
 
 transformers.logging.set_verbosity_error()
 warnings.filterwarnings("ignore", message="Unable to import Triton*")
 
 
-def seq2embdArgs(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument(
-        "-H", type=str, required=True, dest="hdf_load_path",
-        help="Path to load the HDF5 file. Sturcture `data/hdf/$sample.h5` " + 
-        "is recommended."
-    )
-    parser.add_argument(
-        "-E", type=str, required=True, dest="embd_save_fold",
-        help="Fold to save the embedding. Sturcture `data/embd/$sample` " + 
-        "is recommended. Each chromosome's embedding saves under " + 
-        "`data/embd/$sample/$c` in hash structure indexed by pos of each " + 
-        "read, i.e., `data/embd/$sample/$c/$hash_fold/$hash_file.npy`. We " + 
-        "format pos of read into 9 digits int, use first 3 digits as " + 
-        "hash_fold, second 3 digits as hash_file, and last 3 digits " + 
-        "(1000 bp) store in each `.npy`. For example, for read with pos " + 
-        "78034 in chromosome 11, it will store in " + 
-        "`data/embd/$sample/11/000/078.npy`. Each `.npy` is a N by 776 " + 
-        "numpy array where N for number of reads. For each read, `[0:768]` " + 
-        "is the embedding, `[768]` is the pos, and `[769:776]` is num of " + 
-        "variants cover by each read with different p-value threshold. " + 
-        "Note that `[768:776]` directly copy from columns `pos`, `1e+00`, " + 
-        "`1e-01`, `1e-02`, `1e-03`, `1e-04`, `1e-05`, and `1e-06` of HDF5 " + 
-        "file `-H HDF_LOAD_PATH`."
-    )
-    parser.add_argument(
-        "-C", type=str, required=False, dest="ckpt_load_path", default=None,
-        help="Path to load checkpoint for `src.embd.model.FinetuneModel`. " + 
-        "If not provided, `src.embd.model.PretrainModel` will be used. " + 
-        "Default: None."
-    )
-    parser.add_argument(
-        "-p", type=float, required=False, dest="pval_thresh", default=None,
-        help="P-value threshold for filtering reads, i.e., only keep reads " + 
-        "that cover at least one variant with p-value < pval_thresh. " + 
-        "Default: None."
-    )
-    parser.add_argument(
-        "-b", type=int, required=False, dest="batch_size", default=100,
-        help="Batch size for number of reads input to tokenizer and model " + 
-        "at same time. Default: 100."
-    )
-
-
 def seq2embd(
     hdf_load_path: str, embd_save_fold: str, 
     ckpt_load_path: str = None,
-    pval_thresh: float = None, batch_size: int = 100,
+    pval_thresh: float = 0, batch_size: int = 100,
     *vargs, **kwargs
 ) -> None:
     # model
@@ -93,7 +49,7 @@ def seq2embd(
     ):
         # get the hdf that store sequence and p-value for filtering
         hdf = pd.read_hdf(hdf_load_path, key=f"/chr{c}", mode="r")
-        if pval_thresh is not None: hdf = hdf[hdf[f"{pval_thresh:.0e}"]>=1]
+        if pval_thresh != 0: hdf = hdf[hdf[f"{pval_thresh:.0e}"]>=1]
 
         embd = None
         for i in tqdm.tqdm(

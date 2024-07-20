@@ -12,7 +12,3 @@ runs/
 **/.idea/
 **/.vscode/
 **/.DS_Store
-
-# backup
-!data/label.csv
-!data/profile.csv

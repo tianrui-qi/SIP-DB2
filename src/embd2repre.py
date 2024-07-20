@@ -18,7 +18,8 @@ torch.set_num_threads(os.cpu_count())
 class Selector:
     def __init__(self, feature_fold: str, bucket_size: int = 100) -> None:
         self.feature_fold = feature_fold
-        if not os.path.exists(self.feature_fold): os.makedirs(self.feature_fold)
+        if not os.path.exists(self.feature_fold): 
+            os.makedirs(self.feature_fold, exist_ok=True)
         # sample map
         # transformation between sample_idx and embd_fold 
         self.sample_map_path = os.path.join(self.feature_fold, "sample_map.csv")
