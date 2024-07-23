@@ -124,16 +124,12 @@ def step0(  # sample preparation
 def step1(  # bam2seq (BAM and SNPs to Sequence)
     embd_fold: list[str], bam_path: list[str], snps_path: str, 
     quality_thresh: int = 16, length_thresh: int = 96,
-    task_id: int = 0, task_num: int = 1, 
-    *vargs, **kwargs
+    task_id: int = 0, task_num: int = 1, *vargs, **kwargs
 ) -> None:
-    hdf_path = [
-        os.path.join(embd_fold[i], "sequence.h5") for i in range(len(embd_fold))
-    ]
-    for i in range(task_id, len(bam_path), task_num):
-        if os.path.exists(hdf_path[i]): continue
+    for i in range(task_id, len(embd_fold), task_num):
+        if os.path.exists(os.path.join(embd_fold[i], "sequence.h5")): continue
         src.bam2seq(
-            bam_path[i], snps_path, hdf_path[i], 
+            bam_path[i], snps_path, os.path.join(embd_fold[i], "sequence.h5"), 
             quality_thresh=quality_thresh, length_thresh=length_thresh
         )
 
@@ -141,27 +137,22 @@ def step1(  # bam2seq (BAM and SNPs to Sequence)
 def step2(  # seq2embd (embedding calculation using DNABERT2)
     embd_fold: list[str], 
     pval_thresh: float = 0, batch_size: int = 100,
-    task_id: int = 0, task_num: int = 1, 
-    *vargs, **kwargs
+    task_id: int = 0, task_num: int = 1, *vargs, **kwargs
 ) -> None:
-    hdf_path = [
-        os.path.join(embd_fold[i], "sequence.h5") for i in range(len(embd_fold))
-    ]
-    for i in range(task_id, len(hdf_path), task_num):
+    for i in range(task_id, len(embd_fold), task_num):
         if any(
-            os.path.isdir(os.path.join(embd_fold[i], d)) 
-            for d in os.listdir(embd_fold[i])
+            os.path.isdir(os.path.join(embd_fold[i], e)) 
+            for e in os.listdir(embd_fold[i])
         ): continue
         src.seq2embd(
-            hdf_path[i], embd_fold[i], 
+            os.path.join(embd_fold[i], "sequence.h5"), embd_fold[i], 
             pval_thresh=pval_thresh, batch_size=batch_size
         )
 
 
 def step3(  # addFeature (feature selection)
     embd_fold: list[str], feature_fold: str, 
-    task_id: int = 0, task_num: int = 1,
-    *vargs, **kwargs
+    task_id: int = 0, task_num: int = 1, *vargs, **kwargs
 ) -> None:
     selector = src.Selector(feature_fold)
 
@@ -179,9 +170,7 @@ def step3(  # addFeature (feature selection)
 
 
 def step4(  # getFeature
-    feature_fold: str, 
-    task_id: int = 0, task_num: int = 1,
-    *vargs, **kwargs
+    feature_fold: str, task_id: int = 0, task_num: int = 1, *vargs, **kwargs
 ) -> None:
     selector = src.Selector(feature_fold)
     for chromosome in selector.chromosome_list[task_id::task_num]:
@@ -190,8 +179,7 @@ def step4(  # getFeature
 
 def step5(  # applyFeature (go back to feature selection, extract embedding)
     embd_fold: list[str], feature_fold: str, 
-    task_id: int = 0, task_num: int = 1,
-    *vargs, **kwargs
+    task_id: int = 0, task_num: int = 1, *vargs, **kwargs
 ) -> None:
     selector = src.Selector(feature_fold)
     for chromosome in selector.chromosome_list:
@@ -200,8 +188,7 @@ def step5(  # applyFeature (go back to feature selection, extract embedding)
 
 def step6(  # getIPCA (train PCA for deimension reduction)
     embd_fold: list[str], feature_fold: str, 
-    batch_size: int = 1,
-    *vargs, **kwargs
+    batch_size: int = 1, *vargs, **kwargs
 ) -> None:
     selector = src.Selector(feature_fold)
     selector.getIPCA(embd_fold, batch_size)
@@ -209,30 +196,18 @@ def step6(  # getIPCA (train PCA for deimension reduction)
 
 def step7(  # getRepre (get each sample's representation)
     embd_fold: list[str], feature_fold: str, 
-    task_id: int = 0, task_num: int = 1,
-    *vargs, **kwargs
+    task_id: int = 0, task_num: int = 1, *vargs, **kwargs
 ) -> None:
-    repre_path = [
-        os.path.join(embd_fold[i], "representation.npy") 
-        for i in range(len(embd_fold))
-    ]
     selector = src.Selector(feature_fold)
-    selector.getRepre(
-        embd_fold[task_id::task_num], repre_path[task_id::task_num]
-    )
+    selector.getRepre(embd_fold[task_id::task_num], recalculate=True)
 
 
 def step8(  # downstream analysis
-    embd_fold: list[str], figure_path: str, *vargs, **kwargs
+    embd_fold: list[str], feature_fold: str, figure_path: str, *vargs, **kwargs
 ) -> None:
-    repre_path = [
-        os.path.join(embd_fold[i], "representation.npy") 
-        for i in range(len(embd_fold))
-    ]
     # representation
-    repre = np.hstack([
-        np.load(repre_path[i]) for i in range(len(repre_path))
-    ]).T
+    selector = src.Selector(feature_fold)
+    repre = selector.getRepre(embd_fold, recalculate=False)
     # for each column, if there are np.nan in that column, drop that column
     repre = repre[:, np.all(~np.isnan(repre), axis=0)]  # comment for 0, un for 1
     repre = np.nan_to_num(repre, nan=0.0)
@@ -245,8 +220,7 @@ def step8(  # downstream analysis
 
 def slurm(
     job_name: str, logs_fold: str, cpu: int, mem: int, gpu: int,
-    task_num: int = 1, dependency: str | list[str] = None,
-    *vargs, **kwargs
+    task_num: int = 1, dependency: str | list[str] = None, *vargs, **kwargs
 ):
     # create sh
     sh_path = f"{job_name}.sh"

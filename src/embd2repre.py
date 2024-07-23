@@ -423,43 +423,48 @@ class Selector:
     """ getRepre """
 
     def getRepre(
-        self, embd_fold: str | list[str], repre_path: str | list[str]
-    ) -> None:
+        self, embd_fold: str | list[str], recalculate: bool = False
+    ) -> np.ndarray:
         """
         Example:
             >>> import pandas as pd
             >>> from src import Selector
             >>> profile = pd.read_csv("data/profile.csv")
             >>> embd_fold = profile["embd_fold"].to_list()
-            >>> repre_path = profile["repre_path"].to_list()
-            >>> Selector("data/feature").getRepre(embd_fold, repre_path)
+            >>> repre = Selector("data/feature").getRepre(embd_fold)
         """
 
         # input check
         if isinstance(embd_fold, str): embd_fold = [embd_fold]
-        if isinstance(repre_path, str): repre_path = [repre_path]
-        assert len(embd_fold) == len(repre_path)
 
         ipca = self.getIPCA()
-        for i in tqdm.tqdm(
-            range(len(embd_fold)), dynamic_ncols=True, smoothing=0,
+
+        repres = []                             # N * [768, 1]
+        for e in tqdm.tqdm(
+            embd_fold, dynamic_ncols=True, smoothing=0,
             unit="sample", desc="getRepre",
         ):
+            # check if repre already calculated
+            repre_path = os.path.join(e, "representation.npy")
+            if not recalculate and os.path.exists(repre_path):
+                repres.append(np.load(repre_path))
+                continue
             # check path
-            if not isinstance(embd_fold[i], str): continue
-            if not isinstance(repre_path[i], str): continue
-            if not os.path.exists(embd_fold[i]): continue
+            if not isinstance(e, str): continue
+            if not os.path.exists(e): continue
             # load feature (:768 embd, 768 pos, 769 embd_idx)
             feature = np.vstack([
-                np.load(os.path.join(embd_fold[i], c, "feature.npy"))
+                np.load(os.path.join(e, c, "feature.npy"))
                 for c in self.chromosome_list
             ])[:, :768].T                       # [768, K]
             np.nan_to_num(feature, nan=0.0, copy=False)
             # transform
             repre = ipca.transform(feature)     # [768, 1]
             # save
-            os.makedirs(os.path.dirname(repre_path[i]), exist_ok=1)
-            np.save(repre_path[i], repre)
+            repres.append(repre)
+            np.save(os.path.join(e, "representation.npy"), repre)
+
+        return np.hstack(repres).T              # [N, 768]
 
     """ help function """
 
