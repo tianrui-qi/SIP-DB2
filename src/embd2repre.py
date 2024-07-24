@@ -370,7 +370,7 @@ class Selector:
             >>> profile = profile[profile["train"]==1]
             >>> embd_fold = profile["embd_fold"].to_list()
             >>> selector = Selector("data/feature")
-            >>> ipca = selector.getIPCA(embd_fold, batch_size=40)
+            >>> ipca = selector.getIPCA(embd_fold, batch_size=20)
         Example: to load and use the fitted IncrementalPCA,
             >>> ipca = Selector("data/feature").getIPCA()
             >>> repre = ipac.transform(feature)
@@ -397,21 +397,21 @@ class Selector:
             unit="sample", desc="getIPCA",
         ):
             # load feature (:768 embd, 768 pos, 769 embd_idx)
-            feature = np.vstack([
-                np.load(os.path.join(e, c, "feature.npy"))
-                for c in self.chromosome_list
-            ])[:, :768].T                       # [768, K]
-            features.append(feature)
+            for c in self.chromosome_list:
+                features.append(
+                    np.load(os.path.join(e, c, "feature.npy"))[:, :768]
+                )
             batch += 1
             if batch % batch_size != 0: continue
+            # drop row that are nan, means no reads
+            features = np.vstack(features)      # [batch_size * K, 768]
+            features = features[~np.isnan(features).any(axis=1)]
             # partial fit ipca
-            features = np.vstack(features)      # [768 * batch_size, K]
-            np.nan_to_num(features, nan=0.0, copy=False)
             ipca = ipca.partial_fit(features)
             features = []
         if len(features) != 0:
-            features = np.vstack(features)      # [768 * batch_size, K]
-            np.nan_to_num(features, nan=0.0, copy=False)
+            features = np.vstack(features)      # [batch_size * K, 768]
+            features = features[~np.isnan(features).any(axis=1)]
             ipca = ipca.partial_fit(features)
             features = []
 
@@ -439,7 +439,7 @@ class Selector:
 
         ipca = self.getIPCA()
 
-        repres = []                             # N * [768, 1]
+        repres = []                             # N * [K, 1]
         for e in tqdm.tqdm(
             embd_fold, dynamic_ncols=True, smoothing=0,
             unit="sample", desc="getRepre",
@@ -456,15 +456,15 @@ class Selector:
             feature = np.vstack([
                 np.load(os.path.join(e, c, "feature.npy"))
                 for c in self.chromosome_list
-            ])[:, :768].T                       # [768, K]
-            np.nan_to_num(feature, nan=0.0, copy=False)
+            ])[:, :768]                         # [K, 768]
+            feature[np.isnan(feature).all(axis=1)] = ipca.mean_
             # transform
-            repre = ipca.transform(feature)     # [768, 1]
+            repre = ipca.transform(feature)     # [K, 1]
             # save
             repres.append(repre)
-            np.save(os.path.join(e, "representation.npy"), repre)
+            np.save(repre_path, repre)
 
-        return np.hstack(repres).T              # [N, 768]
+        return np.hstack(repres).T              # [N, K]
 
     """ help function """
 
