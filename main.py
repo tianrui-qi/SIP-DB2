@@ -26,7 +26,7 @@ def main() -> None:
         "feature_fold":
             os.path.join(data_fold, "feature"),
         "snps_path":    # step 1 only
-            "/mnt/efs_v2/dbgap_tcga/users/tianrui.qi/SIP-DB2/data/snps.csv",
+            "/mnt/efs_v2/dbgap_tcga/users/tianrui.qi/SIP-DB2/data/snps.h5",
         "figure_path":  # step 8 only
             os.path.join(data_fold, "plot.png"),
         "logs_fold":    # slurm only

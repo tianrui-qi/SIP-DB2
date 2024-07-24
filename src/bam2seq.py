@@ -15,12 +15,10 @@ def bam2seq(
     *vargs, **kwargs
 ) -> None:
     pval_thresh_list = [1e-0, 1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6]
-    chr_list = [str(i) for i in range(1, 23)] + ["X"]   # BAM naming convention
+    chromosome_list = [str(i) for i in range(1, 23)] + ["X"]
 
-    snps_df = None
-
-    for chromosome in tqdm.tqdm(
-        chr_list, unit="chromosome", 
+    for c in tqdm.tqdm(
+        chromosome_list, unit="chromosome", 
         desc=hdf_save_path, smoothing=0.0, dynamic_ncols=True,
     ):
         # if this chromosome already processed, skip
@@ -31,18 +29,12 @@ def bam2seq(
                     #    f"{hdf_save_path}/chr{chromosome} already processed, skip."
                     #)
                     continue
-        
-        # load snps
-        if snps_df is None:
-            snps_df = pd.read_csv(snps_load_path, usecols=["Chr", "Pos", "Pval"])
+        snps_df = pd.read_hdf(snps_load_path, key=f"/chr{chromosome}")
 
         snps_dict = {}
         for pval_thresh in pval_thresh_list:
             # value, one hot, 0/1 for non-variant/variant
-            pos = snps_df[
-                (snps_df["Chr"] == int(chromosome if chromosome != "X" else "23")) & 
-                (snps_df["Pval"] < pval_thresh)
-            ]["Pos"].values
+            pos = snps_df[snps_df["Pval"] < pval_thresh]["Pos"].values
             snps_dict[pval_thresh] = np.zeros(pos.max()+1)
             snps_dict[pval_thresh][pos] = 1
             # len(pos) may differ from snps_dict[pval_thresh].sum()
@@ -59,9 +51,11 @@ def bam2seq(
             [f"{pval_thresh:.0e}" for pval_thresh in pval_thresh_list]
         }
         for read in tqdm.tqdm(
-            bam_file.fetch(bam_file.references[chr_list.index(chromosome)]), 
-            unit="read", desc=f"chromosome{chromosome}", 
-            leave=False, smoothing=0.0, dynamic_ncols=True, 
+            bam_file.fetch(
+                bam_file.references[chromosome_list.index(c)]
+            ), 
+            unit="read", desc=f"chromosome{c}", 
+            leave=False, smoothing=0.0, dynamic_ncols=True,
         ):
             pos = read.reference_start
             sequence = read.query_sequence
@@ -102,5 +96,6 @@ def bam2seq(
         if not os.path.exists(os.path.dirname(hdf_save_path)):
             os.makedirs(os.path.dirname(hdf_save_path))
         pd.DataFrame(read_dict).to_hdf(
-            hdf_save_path, key=f"/chr{chromosome}", mode="a", format="f", index=False
+            hdf_save_path, key=f"/chr{c}", 
+            mode="a", format="f", index=False
         )
