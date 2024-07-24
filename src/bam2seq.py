@@ -12,7 +12,7 @@ __all__ = ["bam2seq"]
 def bam2seq(
     bam_load_path: str, snps_load_path: str, hdf_save_path: str,
     quality_thresh: int = 16, length_thresh: int = 96,
-    *vargs, **kwargs
+    verbal: bool | int = True, *vargs, **kwargs
 ) -> None:
     pval_thresh_list = [1e-0, 1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6]
     chromosome_list = [str(i) for i in range(1, 23)] + ["X"]
@@ -20,16 +20,15 @@ def bam2seq(
     for c in tqdm.tqdm(
         chromosome_list, unit="chromosome", 
         desc=hdf_save_path, smoothing=0.0, dynamic_ncols=True,
+        disable=(not verbal) if isinstance(verbal, bool) else (0 > verbal),
     ):
         # if this chromosome already processed, skip
         if os.path.exists(hdf_save_path):
             with pd.HDFStore(hdf_save_path, mode='r') as hdf:
-                if f"/chr{chromosome}" in hdf.keys():
-                    #tqdm.tqdm.write(
-                    #    f"{hdf_save_path}/chr{chromosome} already processed, skip."
-                    #)
-                    continue
-        snps_df = pd.read_hdf(snps_load_path, key=f"/chr{chromosome}")
+                if f"/chr{c}" in hdf.keys(): continue
+        
+        # load snps
+        snps_df = pd.read_hdf(snps_load_path, key=f"/chr{c}")
 
         snps_dict = {}
         for pval_thresh in pval_thresh_list:
@@ -56,6 +55,7 @@ def bam2seq(
             ), 
             unit="read", desc=f"chromosome{c}", 
             leave=False, smoothing=0.0, dynamic_ncols=True,
+            disable=(not verbal) if isinstance(verbal, bool) else (1 > verbal),
         ):
             pos = read.reference_start
             sequence = read.query_sequence

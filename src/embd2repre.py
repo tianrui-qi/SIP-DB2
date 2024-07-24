@@ -52,6 +52,7 @@ class Selector:
     def addFeature(
         self, embd_fold: str | list[str], 
         chromosome: str, hash_idx_start: int = 0, hash_idx_end: int = 249000,
+        verbal: bool | int = True,
     ) -> None:
         """
         Example: to add feature for chromsome 1,
@@ -105,8 +106,9 @@ class Selector:
         hash_idx_end = min(hash_idx_end, self.hash_idx_max[chromosome])
         for hash_idx in tqdm.tqdm(
             range(hash_idx_start, hash_idx_end), 
-            dynamic_ncols=True, smoothing=0, 
-            unit="hash", desc=f"addFeature/{chromosome}"
+            dynamic_ncols=True, smoothing=0, unit="hash", 
+            desc=f"addFeature/{chromosome}/{hash_idx_start}-{hash_idx_end}",
+            disable=(not verbal) if isinstance(verbal, bool) else (0 > verbal),
         ): self.addFeatureHash(sample_idx, chromosome, hash_idx)
 
     def addFeatureHash(
@@ -232,52 +234,49 @@ class Selector:
     """ getFeature """
 
     def getFeature(
-        self, chromosome: str | list[str] = None
-    ) -> dict[str, np.ndarray]:
-        # input check
-        if chromosome is None: chromosome = self.chromosome_list
-        if isinstance(chromosome, str): chromosome = [chromosome]
+        self, chromosome: str, verbal: bool | int = True,
+    ) -> np.ndarray:
+        # check if feature of chromosome already get
+        feature_c_path = os.path.join(
+            self.feature_fold, chromosome, "feature.npy"
+        )
+        if os.path.exists(feature_c_path): return np.load(feature_c_path)
 
-        # get feature of each chromosome
-        for c in chromosome:
-            # check if feature of current chromosome already get
-            feature_c_path = os.path.join(self.feature_fold, c, "feature.npy")
-            if os.path.exists(feature_c_path): continue
-            # get feature of current chromosome by loop through all hash_idx
-            feature_c = []
-            for hash_idx in tqdm.tqdm(
-                range(self.hash_idx_max[c]), 
-                dynamic_ncols=True, smoothing=0, 
-                unit="hash", desc=f"getFeature/{c}",
-            ):
-                # load feature
-                hash_fold = f"{hash_idx:06d}.npy"[:3]
-                hash_file = f"{hash_idx:06d}.npy"[3:]
-                feature_ch_path = os.path.join(
-                    self.feature_fold, c, hash_fold, hash_file
-                )
-                if not os.path.exists(feature_ch_path): continue
-                feature_ch = np.load(feature_ch_path)
-                # get max distance of each bucket
-                bucket_idx = feature_ch[:, 1]%self.hash_size//self.bucket_size
-                for b in np.unique(bucket_idx):
-                    feature_c.append([
-                        hash_idx, b, np.max(feature_ch[bucket_idx==b][:, 3])
-                    ])
-            # to ndarray and save
-            feature_c = np.array(feature_c, dtype=np.float32)
-            np.save(feature_c_path, feature_c)
+        # get feature of chromosome by loop through all hash_idx
+        feature_c = []
+        for hash_idx in tqdm.tqdm(
+            range(self.hash_idx_max[chromosome]), 
+            dynamic_ncols=True, smoothing=0, 
+            unit="hash", desc=f"getFeature/{chromosome}",
+            disable=(not verbal) if isinstance(verbal, bool) else (0 > verbal),
+        ):
+            # load feature
+            hash_fold = f"{hash_idx:06d}.npy"[:3]
+            hash_file = f"{hash_idx:06d}.npy"[3:]
+            feature_ch_path = os.path.join(
+                self.feature_fold, chromosome, hash_fold, hash_file
+            )
+            if not os.path.exists(feature_ch_path): continue
+            feature_ch = np.load(feature_ch_path)
+            # get max distance of each bucket
+            bucket_idx = feature_ch[:, 1]%self.hash_size//self.bucket_size
+            for b in np.unique(bucket_idx):
+                feature_c.append([
+                    hash_idx, b, np.max(feature_ch[bucket_idx==b][:, 3])
+                ])
 
-        # { chromosome : (hash_idx, bucket_idx, distance) }
-        return {
-            c: np.load(os.path.join(self.feature_fold, c, "feature.npy"))
-            for c in chromosome
-        }
+        # to ndarray and save
+        feature_c = np.array(feature_c, dtype=np.float32)
+        np.save(feature_c_path, feature_c)
+
+        # (hash_idx, bucket_idx, distance)
+        return feature_c
 
     """ applyFeature """
 
     def applyFeature(
-        self, embd_fold: str | list[str], chromosome: str, top_k: float = 0.15
+        self, embd_fold: str | list[str], chromosome: str, 
+        top_k: float = 0.15, verbal: bool | int = True,
     ) -> None:
         """
         Example: process all chromosome in parallel with Slurm,
@@ -290,7 +289,7 @@ class Selector:
 
         # get selected feature of chromosome
         # (hash_idx, bucket_idx, distance)
-        feature_c = self.getFeature(chromosome)[chromosome]
+        feature_c = self.getFeature(chromosome)
         # select top_k percent of feature with largest distance
         top_k = int(len(feature_c) * top_k)
         order = np.sort(np.argsort(feature_c[:, 2])[-top_k:])
@@ -307,15 +306,20 @@ class Selector:
 
         # apply feature for each sample
         # (:768 embd, 768 pos, 769 embd_idx)
-        for e in range(len(embd_fold)):
+        for e in tqdm.tqdm(
+            range(len(embd_fold)), dynamic_ncols=True, smoothing=0,
+            unit="sample", desc=f"applyFeature/{chromosome}",
+            disable=(not verbal) if isinstance(verbal, bool) else (0 > verbal),
+        ):
             # check path
             if not isinstance(embd_fold[e], str): continue
             if not os.path.exists(embd_fold[e]): continue
             # loop through hash_idx to find feature of sample s
             feature_s = []
             for h in tqdm.tqdm(
-                hash_idx, dynamic_ncols=True, smoothing=0,
-                unit="hash", desc=f"applyFeature/{e}/{chromosome} "
+                hash_idx, dynamic_ncols=True, smoothing=0, leave=False, 
+                unit="hash", desc=e, 
+                disable=(not verbal) if isinstance(verbal, bool) else (1 > verbal),
             ):
                 # { bucket_idx : (:768 embd, 768 pos, 769 embd_idx) }
                 embd = self.getEmbdByFold(embd_fold[e], chromosome, h)
@@ -360,7 +364,8 @@ class Selector:
     """ getIPCA (train) """
 
     def getIPCA(
-        self, embd_fold: str | list[str] = None, batch_size: int = 1
+        self, embd_fold: str | list[str] = None, 
+        batch_size: int = 1, verbal: bool | int = True,
     ) -> sklearn.decomposition.IncrementalPCA:
         """
         Example: to use embd_fold for train to partial fit IncrementalPCA,
@@ -395,6 +400,7 @@ class Selector:
         for e in tqdm.tqdm(
             embd_fold, dynamic_ncols=True, smoothing=0,
             unit="sample", desc="getIPCA",
+            disable=(not verbal) if isinstance(verbal, bool) else (0 > verbal),
         ):
             # load feature (:768 embd, 768 pos, 769 embd_idx)
             for c in self.chromosome_list:
@@ -423,7 +429,8 @@ class Selector:
     """ getRepre """
 
     def getRepre(
-        self, embd_fold: str | list[str], recalculate: bool = False
+        self, embd_fold: str | list[str], 
+        recalculate: bool = False, verbal: bool | int = True,
     ) -> np.ndarray:
         """
         Example:
@@ -443,6 +450,7 @@ class Selector:
         for e in tqdm.tqdm(
             embd_fold, dynamic_ncols=True, smoothing=0,
             unit="sample", desc="getRepre",
+            disable=(not verbal) if isinstance(verbal, bool) else (0 > verbal),
         ):
             # check if repre already calculated
             repre_path = os.path.join(e, "representation.npy")

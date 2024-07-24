@@ -22,7 +22,7 @@ def seq2embd(
     hdf_load_path: str, embd_save_fold: str, 
     ckpt_load_path: str = None,
     pval_thresh: float = 0, batch_size: int = 100,
-    *vargs, **kwargs
+    verbal: bool | int = True, *vargs, **kwargs
 ) -> None:
     # model
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -46,6 +46,7 @@ def seq2embd(
     for c in tqdm.tqdm(
         [str(i) for i in range(1, 23)] + ["X"],     # BAM naming convention
         unit="chr", desc=embd_save_fold, smoothing=0.0, dynamic_ncols=True,
+        disable=(not verbal) if isinstance(verbal, bool) else (0 > verbal),
     ):
         # get the hdf that store sequence and p-value for filtering
         hdf = pd.read_hdf(hdf_load_path, key=f"/chr{c}", mode="r")
@@ -54,7 +55,8 @@ def seq2embd(
         embd = None
         for i in tqdm.tqdm(
             range(int(np.ceil(len(hdf)/batch_size))), desc=c, leave=False,
-            unit="batch", smoothing=0.0, dynamic_ncols=True,
+            unit="batch", smoothing=0.0, dynamic_ncols=True, 
+            disable=(not verbal) if isinstance(verbal, bool) else (1 > verbal),
         ):
             # sequence
             sequence_batch = hdf["sequence"].iloc[
@@ -110,6 +112,7 @@ def seq2embd(
         for b in tqdm.tqdm(
             range(len(bucket)), leave=False,
             unit="bucket", desc=c, smoothing=0.0, dynamic_ncols=True,
+            disable=(not verbal) if isinstance(verbal, bool) else (1 > verbal),
         ):
             embd_bucket = embd[bucket2pos[b]:bucket2pos[b+1]]
             hash_idx = f"{bucket[b]:06d}"

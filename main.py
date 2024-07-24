@@ -16,7 +16,7 @@ matplotlib.use('Agg')
 
 def main() -> None:
     # parameters
-    data_fold = f"/mnt/efs_v2/dbgap_tcga/users/tianrui.qi/SIP-DB2/temp/test"
+    data_fold = f"/mnt/efs_v2/dbgap_tcga/users/tianrui.qi/SIP-DB2/temp/instance"
     sample_name  = ["a", "b", "c", "d"]
     args_path = {
         "bam_path":     # list of bam path to be processed
@@ -33,34 +33,43 @@ def main() -> None:
             os.path.join(data_fold, "logs"),
     }
     args_step = {
-        "step0": {},
-        "step1": {"quality_thresh": 16, "length_thresh": 96},
-        "step2": {"pval_thresh": 0, "batch_size": 100},
-        "step3": {},
-        "step4": {},
-        "step5": {},
-        "step6": {"batch_size": 1},
-        "step7": {},
-        "step8": {}
+        "step0":
+            {},
+        "step1":    # seq2embd:     sample * [chromosome, read] level verbal
+            {"verbal": 0, "quality_thresh": 16, "length_thresh": 96},
+        "step2":    # seq2embd:     sample * [chromosome, batch] level verbal
+            {"verbal": 0, "pval_thresh": 0, "batch_size": 100},
+        "step3":    # addFeature:   region * [hash] level verbal
+            {"verbal": 0},
+        "step4":    # getFeature:   chromosome * [hash] level verbal
+            {"verbal": 0},
+        "step5":    # applyFeature: chromosome * [sample, hash] level verbal
+            {"verbal": 0, "top_k": 0.15},
+        "step6":    # getIPCA:      [sample] level verbal
+            {"verbal": 0, "batch_size": 1},
+        "step7":    # getRepre:     [sample] level verbal
+            {"verbal": 0, "recalculate": True},
+        "step8":
+            {},
     }
     args_slurm = {
-        "step0":    # sample preparation: no parallel
+        "step0":
             {"cpu":  2, "mem":  4, "gpu": 0, "task_num": 1},  
-        "step1":    # bam2seq: sample level parallel
+        "step1":    # bam2seq:      sample level parallel
             {"cpu":  2, "mem": 32, "gpu": 0, "task_num": 2},
-        "step2":    # seq2embd: sample level parallel
+        "step2":    # seq2embd:     sample level parallel
             {"cpu": 32, "mem": 32, "gpu": 0, "task_num": 2},
-        "step3":    # addFeature: chromosome and region level parallel, max 316
+        "step3":    # addFeature:   region level parallel, max 316
             {"cpu": 12, "mem": 24, "gpu": 0, "task_num": 4},
-        "step4":    # getFeature: chromosome level parallel
+        "step4":    # getFeature:   chromosome level parallel
             {"cpu":  2, "mem":  8, "gpu": 0, "task_num": 4},
         "step5":    # applyFeature: sample level parallel
             {"cpu":  4, "mem": 10, "gpu": 0, "task_num": 2},
-        "step6":    # getIPCA: no parallel
+        "step6":    # getIPCA:      no parallel
             {"cpu": 24, "mem": 64, "gpu": 0, "task_num": 1},
-        "step7":    # getRepre: sample level parallel
+        "step7":    # getRepre:     sample level parallel
             {"cpu":  2, "mem":  4, "gpu": 0, "task_num": 2},
-        "step8":    # downstream analysis: no parallel
+        "step8":
             {"cpu":  2, "mem":  4, "gpu": 0, "task_num": 1},
     }
 
@@ -123,20 +132,21 @@ def step0(  # sample preparation
 
 def step1(  # bam2seq (BAM and SNPs to Sequence)
     embd_fold: list[str], bam_path: list[str], snps_path: str, 
-    quality_thresh: int = 16, length_thresh: int = 96,
+    quality_thresh: int = 16, length_thresh: int = 96, 
+    verbal: bool | int = True,
     task_id: int = 0, task_num: int = 1, *vargs, **kwargs
 ) -> None:
     for i in range(task_id, len(embd_fold), task_num):
-        if os.path.exists(os.path.join(embd_fold[i], "sequence.h5")): continue
         src.bam2seq(
             bam_path[i], snps_path, os.path.join(embd_fold[i], "sequence.h5"), 
-            quality_thresh=quality_thresh, length_thresh=length_thresh
+            quality_thresh=quality_thresh, length_thresh=length_thresh,
+            verbal=verbal
         )
 
 
 def step2(  # seq2embd (embedding calculation using DNABERT2)
     embd_fold: list[str], 
-    pval_thresh: float = 0, batch_size: int = 100,
+    pval_thresh: float = 0, batch_size: int = 100, verbal: bool | int = True,
     task_id: int = 0, task_num: int = 1, *vargs, **kwargs
 ) -> None:
     for i in range(task_id, len(embd_fold), task_num):
@@ -146,12 +156,12 @@ def step2(  # seq2embd (embedding calculation using DNABERT2)
         ): continue
         src.seq2embd(
             os.path.join(embd_fold[i], "sequence.h5"), embd_fold[i], 
-            pval_thresh=pval_thresh, batch_size=batch_size
+            pval_thresh=pval_thresh, batch_size=batch_size, verbal=verbal
         )
 
 
 def step3(  # addFeature (feature selection)
-    embd_fold: list[str], feature_fold: str, 
+    embd_fold: list[str], feature_fold: str, verbal: bool | int = True,
     task_id: int = 0, task_num: int = 1, *vargs, **kwargs
 ) -> None:
     selector = src.Selector(feature_fold)
@@ -159,47 +169,54 @@ def step3(  # addFeature (feature selection)
     # max task_num is 316 since hash_step is 10000
     # decrease hash_step will increase task_num
     hash_step = 10000
-    task = [
+    region = [
         {"chromosome": c, "hash_idx_start": i, "hash_idx_end": i+hash_step} 
         for c in selector.chromosome_list 
         for i in range(0, selector.hash_idx_max[c], hash_step)
     ]
 
-    for i in range(task_id, len(task), task_num):
-        selector.addFeature(embd_fold, **task[i])
+    for i in range(task_id, len(region), task_num):
+        selector.addFeature(embd_fold, **region[i], verbal=verbal)
 
 
 def step4(  # getFeature
-    feature_fold: str, task_id: int = 0, task_num: int = 1, *vargs, **kwargs
+    feature_fold: str, verbal: bool | int = True,
+    task_id: int = 0, task_num: int = 1, *vargs, **kwargs
 ) -> None:
     selector = src.Selector(feature_fold)
     for chromosome in selector.chromosome_list[task_id::task_num]:
-        selector.getFeature(chromosome)
+        selector.getFeature(chromosome, verbal=verbal)
 
 
 def step5(  # applyFeature (go back to feature selection, extract embedding)
     embd_fold: list[str], feature_fold: str, 
+    top_k: float = 0.15, verbal: bool | int = True,
     task_id: int = 0, task_num: int = 1, *vargs, **kwargs
 ) -> None:
     selector = src.Selector(feature_fold)
     for chromosome in selector.chromosome_list:
-        selector.applyFeature(embd_fold[task_id::task_num], chromosome)
+        selector.applyFeature(
+            embd_fold[task_id::task_num], chromosome, top_k=top_k, verbal=verbal
+        )
 
 
 def step6(  # getIPCA (train PCA for deimension reduction)
     embd_fold: list[str], feature_fold: str, 
-    batch_size: int = 1, *vargs, **kwargs
+    batch_size: int = 1, verbal: bool | int = True, *vargs, **kwargs
 ) -> None:
     selector = src.Selector(feature_fold)
-    selector.getIPCA(embd_fold, batch_size)
+    selector.getIPCA(embd_fold, batch_size, verbal=verbal)
 
 
 def step7(  # getRepre (get each sample's representation)
     embd_fold: list[str], feature_fold: str, 
+    recalculate: bool = False, verbal: bool | int = True,
     task_id: int = 0, task_num: int = 1, *vargs, **kwargs
 ) -> None:
     selector = src.Selector(feature_fold)
-    selector.getRepre(embd_fold[task_id::task_num], recalculate=True)
+    selector.getRepre(
+        embd_fold[task_id::task_num], recalculate=recalculate, verbal=verbal
+    )
 
 
 def step8(  # downstream analysis
