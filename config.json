@@ -1,0 +1,32 @@
+{
+    "args_path": {
+        "config_path":  "/mnt/efs_v2/dbgap_tcga/users/tianrui.qi/SIP-DB2/config.json",
+        "bam_path":     "/mnt/efs_v2/dbgap_tcga/users/tianrui.qi/SIP-DB2/temp/bam_path.csv",
+        "embd_fold":    "/mnt/efs_v2/dbgap_tcga/users/tianrui.qi/SIP-DB2/temp/slurm/embd",
+        "feature_fold": "/mnt/efs_v2/dbgap_tcga/users/tianrui.qi/SIP-DB2/temp/slurm/feature",
+        "snps_path":    "/mnt/efs_v2/dbgap_tcga/users/tianrui.qi/SIP-DB2/data/snps.h5",
+        "figure_path":  "/mnt/efs_v2/dbgap_tcga/users/tianrui.qi/SIP-DB2/temp/slurm/plot.png",
+        "logs_fold":    "/mnt/efs_v2/dbgap_tcga/users/tianrui.qi/SIP-DB2/temp/slurm/logs",
+        "environment":  "source /home/s.tianrui.qi/miniconda3/etc/profile.d/conda.sh\nconda activate SIP-DB2"
+    },
+    "args_step": {
+        "step1": {"verbal": 0, "quality_thresh": 16, "length_thresh": 96},
+        "step2": {"verbal": 0, "pval_thresh": 0, "batch_size": 100},
+        "step3": {"verbal": 0},
+        "step4": {"verbal": 0},
+        "step5": {"verbal": 0, "top_k": 0.15},
+        "step6": {"verbal": 0, "batch_size": 1},
+        "step7": {"verbal": 0, "recalculate": true},
+        "step8": {}
+    },
+    "args_slurm": {
+        "step1": {"cpu":  2, "mem": 32, "gpu": 0, "task_num": 2},
+        "step2": {"cpu": 32, "mem": 32, "gpu": 0, "task_num": 2},
+        "step3": {"cpu": 12, "mem": 24, "gpu": 0, "task_num": 4},
+        "step4": {"cpu":  2, "mem":  8, "gpu": 0, "task_num": 4},
+        "step5": {"cpu":  4, "mem": 10, "gpu": 0, "task_num": 2},
+        "step6": {"cpu": 24, "mem": 64, "gpu": 0, "task_num": 1},
+        "step7": {"cpu":  2, "mem":  4, "gpu": 0, "task_num": 2},
+        "step8": {"cpu":  2, "mem":  4, "gpu": 0, "task_num": 1}
+    }
+}

@@ -1,8 +1,9 @@
 import numpy as np
+import pandas as pd
 import sklearn.decomposition
 
 import os
-import pysam
+import json
 import argparse
 import subprocess
 import matplotlib
@@ -15,119 +16,64 @@ matplotlib.use('Agg')
 
 
 def main() -> None:
-    # parameters
-    data_fold = f"/mnt/efs_v2/dbgap_tcga/users/tianrui.qi/SIP-DB2/temp/instance"
-    sample_name  = ["a", "b", "c", "d"]
-    args_path = {
-        "bam_path":     # list of bam path to be processed
-            [os.path.join(data_fold, f"bam/{i}.bam") for i in sample_name], 
-        "embd_fold":
-            [os.path.join(data_fold, f"embd/{i}") for i in sample_name], 
-        "feature_fold":
-            os.path.join(data_fold, "feature"),
-        "snps_path":    # step 1 only
-            "/mnt/efs_v2/dbgap_tcga/users/tianrui.qi/SIP-DB2/data/snps.h5",
-        "figure_path":  # step 8 only
-            os.path.join(data_fold, "plot.png"),
-        "logs_fold":    # slurm only
-            os.path.join(data_fold, "logs"),
-    }
-    args_step = {
-        "step0":
-            {},
-        "step1":    # seq2embd:     sample * [chromosome, read] level verbal
-            {"verbal": 0, "quality_thresh": 16, "length_thresh": 96},
-        "step2":    # seq2embd:     sample * [chromosome, batch] level verbal
-            {"verbal": 0, "pval_thresh": 0, "batch_size": 100},
-        "step3":    # addFeature:   region * [hash] level verbal
-            {"verbal": 0},
-        "step4":    # getFeature:   chromosome * [hash] level verbal
-            {"verbal": 0},
-        "step5":    # applyFeature: chromosome * [sample, hash] level verbal
-            {"verbal": 0, "top_k": 0.15},
-        "step6":    # getIPCA:      [sample] level verbal
-            {"verbal": 0, "batch_size": 1},
-        "step7":    # getRepre:     [sample] level verbal
-            {"verbal": 0, "recalculate": True},
-        "step8":
-            {},
-    }
-    args_slurm = {
-        "step0":
-            {"cpu":  2, "mem":  4, "gpu": 0, "task_num": 1},  
-        "step1":    # bam2seq:      sample level parallel
-            {"cpu":  2, "mem": 32, "gpu": 0, "task_num": 2},
-        "step2":    # seq2embd:     sample level parallel
-            {"cpu": 32, "mem": 32, "gpu": 0, "task_num": 2},
-        "step3":    # addFeature:   region level parallel, max 316
-            {"cpu": 12, "mem": 24, "gpu": 0, "task_num": 4},
-        "step4":    # getFeature:   chromosome level parallel
-            {"cpu":  2, "mem":  8, "gpu": 0, "task_num": 4},
-        "step5":    # applyFeature: sample level parallel
-            {"cpu":  4, "mem": 10, "gpu": 0, "task_num": 2},
-        "step6":    # getIPCA:      no parallel
-            {"cpu": 24, "mem": 64, "gpu": 0, "task_num": 1},
-        "step7":    # getRepre:     sample level parallel
-            {"cpu":  2, "mem":  4, "gpu": 0, "task_num": 2},
-        "step8":
-            {"cpu":  2, "mem":  4, "gpu": 0, "task_num": 1},
-    }
+    # step                  ~ level verbal                  ~ level parallel
+    # step1 seq2embd        sample * [chromosome, read]     sample
+    # step2 seq2embd        sample * [chromosome, batch]    sample 
+    # step3 addFeature      region * [hash]                 region, max 316
+    # step4 getFeature      chromosome * [hash]             chromosome 
+    # step5 applyFeature    chromosome * [sample, hash]     sample 
+    # step6 getIPCA         [sample]                        no 
+    # step7 getRepre        [sample]                        sample 
 
-    # input argument
+    # arguments
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "-m", type=str, required=True, dest="mode", 
-        choices=["instance", "slurm"] + [f"step{i}" for i in range(9)]
+        choices=["instance", "slurm"] + [f"step{i}" for i in range(1, 9)]
     )
+    parser.add_argument("-c", type=str, required=True, dest="config_path")
     parser.add_argument("--task_id" , type=int, dest="task_id" , default=0)
     parser.add_argument("--task_num", type=int, dest="task_num", default=1)
-    args_task = vars(parser.parse_args())
+    args = parser.parse_args()
 
-    # if mode is instance or step{i}
-    for i, step in enumerate(
-        [step0, step1, step2, step3, step4, step5, step6, step7, step8]
-    ):
-        if args_task["mode"] not in ["instance", f"step{i}"]: continue
-        step(**args_path, **args_step[f"step{i}"], **args_task)
+    # configuration
+    with open(args.config_path) as f: config = json.load(f)
+    args_path  = config["args_path" ]
+    args_step  = config["args_step" ]
+    args_task  = {"task_id": args.task_id, "task_num": args.task_num}
+    args_slurm = config["args_slurm"]
+    
+    # if  mode is instance or step{i}
+    if args.mode in ["instance"] + [f"step{i}" for i in range(1, 9)]:
+        # get list of bam_path and embd_fold for each sample
+        args_path["bam_path"] = pd.read_csv(
+            args_path["bam_path"], usecols=["bam_path"]
+        )["bam_path"].tolist()
+        args_path["embd_fold"] = [
+            os.path.join(
+                args_path["embd_fold"],
+                os.path.basename(b).replace('.bam', '')
+            ) for b in args_path["bam_path"]
+        ]
+        # if mode is instance or step{i}
+        func_list = [step1, step2, step3, step4, step5, step6, step7, step8]
+        for i in range(1, 9):
+            if args.mode not in ["instance", f"step{i}"]: continue
+            func_list[i-1](**args_path, **args_step[f"step{i}"], **args_task)
 
     # if mode is slurm
-    dependency = None
-    for step in [f"step{i}" for i in range(9)]:
-        if args_task["mode"] != "slurm": break
-        dependency = slurm(
-            job_name=step, dependency=dependency,
-            **args_path, **args_slurm[step],
-        )
-
-
-def step0(  # sample preparation
-    bam_path, *vargs, **kwargs
-) -> None:
-    def make_sample(bam_load_path, bam_save_path, num_reads=500):
-        # file check
-        os.makedirs(os.path.dirname(bam_save_path), exist_ok=True)
-        if os.path.exists(bam_save_path): os.remove(bam_save_path)
-        if os.path.exists(bam_save_path + ".bai"): 
-            os.remove(bam_save_path + ".bai")
-        # make sample
-        input = pysam.AlignmentFile(bam_load_path, "rb")
-        output = pysam.AlignmentFile(bam_save_path, "wb", template=input)
-        for c in [str(i) for i in range(1, 23)] + ["X"]:
-            count = 0
-            for read in input.fetch(c):
-                if count >= num_reads: break
-                output.write(read)
-                count += 1
-        input.close()
-        output.close()
-        _ = pysam.sort("-o", bam_save_path, bam_save_path)
-        _ = pysam.index(bam_save_path)
-    # make example samples, run once 
-    data_fold = "/mnt/efs_v2/dbgap_tcga/users/tianrui.qi/SIP-DB2/data"
-    make_sample(os.path.join(data_fold, "bam/SRR8924580.bam"), bam_path[0])
-    make_sample(os.path.join(data_fold, "bam/SRR8924581.bam"), bam_path[1])
-    make_sample(os.path.join(data_fold, "bam/SRR8924582.bam"), bam_path[2])
-    make_sample(os.path.join(data_fold, "bam/SRR8924583.bam"), bam_path[3])
+    if args.mode == "slurm":
+        dependency = None
+        for i in range(1, 9):
+            job_id = slurm(
+                job_name=f"step{i}", dependency=dependency,
+                **args_path, **args_slurm[f"step{i}"],
+            )
+            print((
+                f"job (name: step{i}, id: {job_id}) submitted " 
+                f"with dependency {dependency}"
+            ))
+            dependency = job_id
 
 
 def step1(  # bam2seq (BAM and SNPs to Sequence)
@@ -237,7 +183,8 @@ def step8(  # downstream analysis
 
 def slurm(
     job_name: str, logs_fold: str, cpu: int, mem: int, gpu: int,
-    task_num: int = 1, dependency: str | list[str] = None, *vargs, **kwargs
+    environment: str, config_path: str, task_num: int = 1, 
+    dependency: str | list[str] = None, *vargs, **kwargs
 ):
     # create sh
     sh_path = f"{job_name}.sh"
@@ -251,9 +198,8 @@ def slurm(
         f"#SBATCH --gres=gpu:{gpu}" "\n"
         f"#SBATCH --array=0-{task_num-1}" "\n"
         "#SBATCH --requeue" "\n"
-        "source /home/s.tianrui.qi/miniconda3/etc/profile.d/conda.sh" "\n"
-        "conda activate SIP-DB2" "\n"
-        f"srun python main.py -m {job_name} "
+        f"{environment}" "\n"
+        f"srun python main.py -m {job_name} -c {config_path} "
         f"--task_id $SLURM_ARRAY_TASK_ID --task_num {task_num}" "\n"
     ))
     # submit job
