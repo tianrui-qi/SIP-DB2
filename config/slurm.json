@@ -1,7 +1,7 @@
 {
     "args_path": {
-        "config_path":  "/mnt/efs_v2/dbgap_tcga/users/tianrui.qi/SIP-DB2/config.json",
-        "bam_path":     "/mnt/efs_v2/dbgap_tcga/users/tianrui.qi/SIP-DB2/temp/bam_path.csv",
+        "config_path":  "/mnt/efs_v2/dbgap_tcga/users/tianrui.qi/SIP-DB2/config/slurm.json",
+        "bam_path":     "/mnt/efs_v2/dbgap_tcga/users/tianrui.qi/SIP-DB2/config/slurm.txt",
         "embd_fold":    "/mnt/efs_v2/dbgap_tcga/users/tianrui.qi/SIP-DB2/temp/slurm/embd",
         "feature_fold": "/mnt/efs_v2/dbgap_tcga/users/tianrui.qi/SIP-DB2/temp/slurm/feature",
         "snps_path":    "/mnt/efs_v2/dbgap_tcga/users/tianrui.qi/SIP-DB2/data/snps.h5",
@@ -11,11 +11,11 @@
     },
     "args_step": {
         "step1": {"verbal": 0, "quality_thresh": 16, "length_thresh": 96},
-        "step2": {"verbal": 0, "pval_thresh": 0, "batch_size": 100},
+        "step2": {"verbal": 0, "pval_thresh": 0, "batch_size": 1000},
         "step3": {"verbal": 0},
         "step4": {"verbal": 0},
         "step5": {"verbal": 0, "top_k": 0.15},
-        "step6": {"verbal": 0, "batch_size": 1},
+        "step6": {"verbal": 0, "batch_size": 20},
         "step7": {"verbal": 0, "recalculate": true},
         "step8": {}
     },

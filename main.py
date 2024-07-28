@@ -17,13 +17,14 @@ matplotlib.use('Agg')
 
 def main() -> None:
     # step                  ~ level verbal                  ~ level parallel
-    # step1 seq2embd        sample * [chromosome, read]     sample
+    # step1 bam2seq         sample * [chromosome, read]     sample
     # step2 seq2embd        sample * [chromosome, batch]    sample 
     # step3 addFeature      region * [hash]                 region, max 316
     # step4 getFeature      chromosome * [hash]             chromosome 
     # step5 applyFeature    chromosome * [sample, hash]     sample 
     # step6 getIPCA         [sample]                        no 
     # step7 getRepre        [sample]                        sample 
+    # step8 downstream      [sample]                        no
 
     # arguments
     parser = argparse.ArgumentParser()
@@ -47,8 +48,8 @@ def main() -> None:
     if args.mode in ["instance"] + [f"step{i}" for i in range(1, 9)]:
         # get list of bam_path and embd_fold for each sample
         args_path["bam_path"] = pd.read_csv(
-            args_path["bam_path"], usecols=["bam_path"]
-        )["bam_path"].tolist()
+            args_path["bam_path"], header=None,
+        )[0].tolist()
         args_path["embd_fold"] = [
             os.path.join(
                 args_path["embd_fold"],
@@ -166,14 +167,12 @@ def step7(  # getRepre (get each sample's representation)
 
 
 def step8(  # downstream analysis
-    embd_fold: list[str], feature_fold: str, figure_path: str, *vargs, **kwargs
+    embd_fold: list[str], feature_fold: str, figure_path: str, 
+    verbal: bool | int = True, *vargs, **kwargs
 ) -> None:
     # representation
     selector = src.Selector(feature_fold)
-    repre = selector.getRepre(embd_fold, recalculate=False)
-    # for each column, if there are np.nan in that column, drop that column
-    repre = repre[:, np.all(~np.isnan(repre), axis=0)]  # comment for 0, un for 1
-    repre = np.nan_to_num(repre, nan=0.0)
+    repre = selector.getRepre(embd_fold, recalculate=False, verbal=verbal)
     # fit
     repre_pca = sklearn.decomposition.PCA(n_components=2).fit_transform(repre)
     # plot PCA 0 and 1
