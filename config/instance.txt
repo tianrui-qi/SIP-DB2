@@ -1,0 +1,4 @@
+/mnt/efs_v2/dbgap_tcga/users/tianrui.qi/SIP-DB2/temp/instance/bam/a.bam
+/mnt/efs_v2/dbgap_tcga/users/tianrui.qi/SIP-DB2/temp/instance/bam/b.bam
+/mnt/efs_v2/dbgap_tcga/users/tianrui.qi/SIP-DB2/temp/instance/bam/c.bam
+/mnt/efs_v2/dbgap_tcga/users/tianrui.qi/SIP-DB2/temp/instance/bam/d.bam

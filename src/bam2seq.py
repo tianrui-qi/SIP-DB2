@@ -12,10 +12,13 @@ __all__ = ["bam2seq"]
 def bam2seq(
     bam_load_path: str, snps_load_path: str, hdf_save_path: str,
     quality_thresh: int = 16, length_thresh: int = 96,
-    verbal: bool | int = True, *vargs, **kwargs
+    batch_size: int = 1e6, verbal: bool | int = True, *vargs, **kwargs
 ) -> None:
     pval_thresh_list = [1e-0, 1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6]
     chromosome_list = [str(i) for i in range(1, 23)] + ["X"]
+
+    dirname = os.path.dirname(hdf_save_path)
+    if dirname and not os.path.exists(dirname): os.makedirs(dirname)
 
     for c in tqdm.tqdm(
         chromosome_list, unit="chromosome", 
@@ -49,6 +52,7 @@ def bam2seq(
             ["sequence", "pos"] + 
             [f"{pval_thresh:.0e}" for pval_thresh in pval_thresh_list]
         }
+        batch_index = 0
         for read in tqdm.tqdm(
             bam_file.fetch(
                 bam_file.references[chromosome_list.index(c)]
@@ -79,7 +83,7 @@ def bam2seq(
             # filter by read length
             if len(sequence) < length_thresh: continue
 
-            # save
+            # save to dictionary
             read_dict["sequence"].append(sequence)
             read_dict["pos"].append(pos)
             for pval_thresh in pval_thresh_list:
@@ -92,10 +96,32 @@ def bam2seq(
                     )
                 read_dict[f"{pval_thresh:.0e}"].append(num)
 
-        # save
-        if not os.path.exists(os.path.dirname(hdf_save_path)):
-            os.makedirs(os.path.dirname(hdf_save_path))
-        pd.DataFrame(read_dict).to_hdf(
-            hdf_save_path, key=f"/chr{c}", 
-            mode="a", format="f", index=False
-        )
+            # save to hdf if reach batch_size
+            if len(read_dict["sequence"]) < batch_size: continue
+            read_df = pd.DataFrame(read_dict)
+            read_df.to_hdf(
+                hdf_save_path, key=f"/chr{c}_batch{batch_index}", 
+                mode="a", format="table", index=False
+            )
+            read_dict = {
+                key: [] for key in 
+                ["sequence", "pos"] + 
+                [f"{pval_thresh:.0e}" for pval_thresh in pval_thresh_list]
+            }
+            batch_index += 1
+        # save remaining to hdf
+        if len(read_dict["sequence"]) > 0:
+            read_df = pd.DataFrame(read_dict)
+            read_df.to_hdf(
+                hdf_save_path, key=f"/chr{c}_batch{batch_index}", 
+                mode="a", format="table", index=False
+            )
+            read_dict = {
+                key: [] for key in 
+                ["sequence", "pos"] + 
+                [f"{pval_thresh:.0e}" for pval_thresh in pval_thresh_list]
+            }
+            batch_index = 0
+
+        # close bam file
+        bam_file.close()

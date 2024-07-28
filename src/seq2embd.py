@@ -49,7 +49,17 @@ def seq2embd(
         disable=(not verbal) if isinstance(verbal, bool) else (0 > verbal),
     ):
         # get the hdf that store sequence and p-value for filtering
-        hdf = pd.read_hdf(hdf_load_path, key=f"/chr{c}", mode="r")
+        hdf = []
+        batch_index = 0
+        while True:
+            try:
+                key = f"/chr{c}_batch{batch_index}"
+                hdf.append(pd.read_hdf(hdf_load_path, key=key, mode="r"))
+                batch_index += 1
+            except KeyError: 
+                break
+        hdf = pd.concat(hdf, ignore_index=True)
+        # filtering using p-value
         if pval_thresh != 0: hdf = hdf[hdf[f"{pval_thresh:.0e}"]>=1]
 
         embd = None
