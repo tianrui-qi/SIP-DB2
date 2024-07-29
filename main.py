@@ -17,14 +17,14 @@ matplotlib.use('Agg')
 
 def main() -> None:
     # step                  ~ level verbal                  ~ level parallel
-    # step1 bam2seq         sample * [chromosome, read]     sample
-    # step2 seq2embd        sample * [chromosome, batch]    sample 
-    # step3 addFeature      region * [hash]                 region, max 316
-    # step4 getFeature      chromosome * [hash]             chromosome 
-    # step5 applyFeature    chromosome * [sample, hash]     sample 
-    # step6 getIPCA         [sample]                        no 
-    # step7 getRepre        [sample]                        sample 
-    # step8 downstream      [sample]                        no
+    # step1 bam2seq         [sample, chromosome] * [read]   sample, chromosome
+    # step2 seq2embd        [sample, chromosome] * [batch]  sample, chromosome
+    # step3 addFeature      [chromosome, region] * [hash]   chromosome, region
+    # step4 getFeature      [chromosome] * [hash]           chromosome 
+    # step5 applyFeature    [chromosome] * [sample, hash]   sample 
+    # step6 getIPCA         [] * [sample]                   no 
+    # step7 getRepre        [] * [sample]                   sample 
+    # step8 downstream      [] * [sample]                   no
 
     # arguments
     parser = argparse.ArgumentParser()
@@ -83,9 +83,17 @@ def step1(  # bam2seq (BAM and SNPs to Sequence)
     verbal: bool | int = True,
     task_id: int = 0, task_num: int = 1, *vargs, **kwargs
 ) -> None:
-    for i in range(task_id, len(embd_fold), task_num):
+    task = [
+        (e, c)
+        for e in range(len(embd_fold)) 
+        for c in [str(i) for i in range(1, 23)] + ["X"]
+    ]
+    for t in range(task_id, len(task), task_num):
+        e, c = task[t]
         src.bam2seq(
-            bam_path[i], snps_path, os.path.join(embd_fold[i], "sequence.h5"), 
+            bam_load_path=bam_path[e],
+            hdf_save_path=os.path.join(embd_fold[e], c, "sequence.h5"), 
+            chromosome=c, snps_load_path=snps_path, 
             quality_thresh=quality_thresh, length_thresh=length_thresh,
             verbal=verbal
         )
@@ -96,13 +104,21 @@ def step2(  # seq2embd (embedding calculation using DNABERT2)
     pval_thresh: float = 0, batch_size: int = 100, verbal: bool | int = True,
     task_id: int = 0, task_num: int = 1, *vargs, **kwargs
 ) -> None:
-    for i in range(task_id, len(embd_fold), task_num):
+    task = [
+        (e, c)
+        for e in range(len(embd_fold)) 
+        for c in [str(i) for i in range(1, 23)] + ["X"]
+    ]
+    for t in range(task_id, len(task), task_num):
+        e, c = task[t]
         if any(
-            os.path.isdir(os.path.join(embd_fold[i], e)) 
-            for e in os.listdir(embd_fold[i])
+            os.path.isdir(os.path.join(embd_fold[e], c, h)) 
+            for h in os.listdir(os.path.join(embd_fold[e], c))
         ): continue
         src.seq2embd(
-            os.path.join(embd_fold[i], "sequence.h5"), embd_fold[i], 
+            hdf_load_path=os.path.join(embd_fold[e], c, "sequence.h5"), 
+            embd_save_fold=os.path.join(embd_fold[e], c), 
+            chromosome=c,
             pval_thresh=pval_thresh, batch_size=batch_size, verbal=verbal
         )
 
@@ -116,14 +132,14 @@ def step3(  # addFeature (feature selection)
     # max task_num is 316 since hash_step is 10000
     # decrease hash_step will increase task_num
     hash_step = 10000
-    region = [
+    task = [
         {"chromosome": c, "hash_idx_start": i, "hash_idx_end": i+hash_step} 
         for c in selector.chromosome_list 
         for i in range(0, selector.hash_idx_max[c], hash_step)
     ]
 
-    for i in range(task_id, len(region), task_num):
-        selector.addFeature(embd_fold, **region[i], verbal=verbal)
+    for i in range(task_id, len(task), task_num):
+        selector.addFeature(embd_fold, **task[i], verbal=verbal)
 
 
 def step4(  # getFeature

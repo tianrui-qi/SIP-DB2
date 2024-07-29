@@ -20,9 +20,9 @@
         "step8": {}
     },
     "args_slurm": {
-        "step1": {"cpu":  2, "mem": 16, "gpu": 0, "task_num": 2},
-        "step2": {"cpu": 32, "mem": 24, "gpu": 0, "task_num": 2},
-        "step3": {"cpu": 12, "mem": 24, "gpu": 0, "task_num": 4},
+        "step1": {"cpu":  1, "mem": 16, "gpu": 0, "task_num": 23},
+        "step2": {"cpu": 16, "mem": 24, "gpu": 0, "task_num": 23},
+        "step3": {"cpu": 16, "mem": 24, "gpu": 0, "task_num": 4},
         "step4": {"cpu":  2, "mem":  8, "gpu": 0, "task_num": 4},
         "step5": {"cpu":  4, "mem": 10, "gpu": 0, "task_num": 2},
         "step6": {"cpu": 24, "mem": 64, "gpu": 0, "task_num": 1},

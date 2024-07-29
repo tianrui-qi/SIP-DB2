@@ -107,7 +107,7 @@ class Selector:
         for hash_idx in tqdm.tqdm(
             range(hash_idx_start, hash_idx_end), 
             dynamic_ncols=True, smoothing=0, unit="hash", 
-            desc=f"addFeature/{chromosome}/{hash_idx_start}-{hash_idx_end}",
+            desc=f"addFeature:{chromosome}:{hash_idx_start:06}-{hash_idx_end:06}",
             disable=(not verbal) if isinstance(verbal, bool) else (0 > verbal),
         ): self.addFeatureHash(sample_idx, chromosome, hash_idx)
 
@@ -247,7 +247,7 @@ class Selector:
         for hash_idx in tqdm.tqdm(
             range(self.hash_idx_max[chromosome]), 
             dynamic_ncols=True, smoothing=0, 
-            unit="hash", desc=f"getFeature/{chromosome}",
+            unit="hash", desc=f"getFeature:{chromosome}",
             disable=(not verbal) if isinstance(verbal, bool) else (0 > verbal),
         ):
             # load feature
@@ -308,7 +308,7 @@ class Selector:
         # (:768 embd, 768 pos, 769 embd_idx)
         for e in tqdm.tqdm(
             range(len(embd_fold)), dynamic_ncols=True, smoothing=0,
-            unit="sample", desc=f"applyFeature/{chromosome}",
+            unit="sample", desc=f"applyFeature:{chromosome}",
             disable=(not verbal) if isinstance(verbal, bool) else (0 > verbal),
         ):
             # check path
