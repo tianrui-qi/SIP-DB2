@@ -2,11 +2,11 @@
     "args_path": {
         "config_path":  "/mnt/efs_v2/dbgap_tcga/users/tianrui.qi/SIP-DB2/config/instance.json",
         "bam_path":     "/mnt/efs_v2/dbgap_tcga/users/tianrui.qi/SIP-DB2/config/instance.txt",
-        "embd_fold":    "/mnt/efs_v2/dbgap_tcga/users/tianrui.qi/SIP-DB2/temp/instance/embd",
-        "feature_fold": "/mnt/efs_v2/dbgap_tcga/users/tianrui.qi/SIP-DB2/temp/instance/feature",
+        "embd_fold":    "/mnt/efs_v2/dbgap_tcga/users/tianrui.qi/SIP-DB2/test/instance/embd",
+        "feature_fold": "/mnt/efs_v2/dbgap_tcga/users/tianrui.qi/SIP-DB2/test/instance/feature",
         "snps_path":    "/mnt/efs_v2/dbgap_tcga/users/tianrui.qi/SIP-DB2/data/snps.h5",
-        "figure_path":  "/mnt/efs_v2/dbgap_tcga/users/tianrui.qi/SIP-DB2/temp/instance/plot.png",
-        "logs_fold":    "/mnt/efs_v2/dbgap_tcga/users/tianrui.qi/SIP-DB2/temp/instance/logs",
+        "figure_path":  "/mnt/efs_v2/dbgap_tcga/users/tianrui.qi/SIP-DB2/test/instance/plot.png",
+        "logs_fold":    "/mnt/efs_v2/dbgap_tcga/users/tianrui.qi/SIP-DB2/test/instance/logs",
         "environment":  "source /home/s.tianrui.qi/miniconda3/etc/profile.d/conda.sh\nconda activate SIP-DB2"
     },
     "args_step": {
