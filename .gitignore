@@ -1,8 +1,6 @@
 ckpt/
 data/**
 runs/
-test/
-achieve/
 
 # temp folder and files
 **/temp/

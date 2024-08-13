@@ -55,30 +55,6 @@ class Selector:
         verbal: bool | int = True,
     ) -> None:
         """
-        Example: to add feature for chromsome 1,
-            >>> import pandas as pd
-            >>> import os
-            >>> from src.embd2repre import Selector
-            >>> # sample to be added to the selector
-            >>> profile = pd.read_csv("data/profile.csv")
-            >>> profile = profile[profile["train"]==1]
-            >>> embd_fold = profile["embd_fold"].to_list()
-            >>> # selector
-            >>> selector = Selector("data/feature")
-            >>> # process chromosome 1 in 3 part parallel
-            >>> # can be further parallel by divide hash_idx into more parts
-            >>> selector.addFeature(
-            ...     embd_fold, chromosome="1", 
-            ...     hash_idx_start=     0, hash_idx_end= 80000
-            ... )
-            >>> selector.addFeature(
-            ...     embd_fold, chromosome="1", 
-            ...     hash_idx_start= 80000, hash_idx_end=160000
-            ... )
-            >>> selector.addFeature(
-            ...     embd_fold, chromosome="1", 
-            ...     hash_idx_start=160000
-            ... )
         Example: process all chromosome in parallel with Slurm,
             [add.py](https://github.com/tianrui-qi/SIP-DB2/blob/c02edf434d6b78d03cc8f97a6b31b7917dbe67a1/add.py)
             [add.sh](https://github.com/tianrui-qi/SIP-DB2/blob/c02edf434d6b78d03cc8f97a6b31b7917dbe67a1/add.sh)
@@ -367,20 +343,6 @@ class Selector:
         self, embd_fold: str | list[str] = None, 
         batch_size: int = 1, verbal: bool | int = True,
     ) -> sklearn.decomposition.IncrementalPCA:
-        """
-        Example: to use embd_fold for train to partial fit IncrementalPCA,
-            >>> import pandas as pd
-            >>> from src import Selector
-            >>> profile = pd.read_csv("data/profile.csv")
-            >>> profile = profile[profile["train"]==1]
-            >>> embd_fold = profile["embd_fold"].to_list()
-            >>> selector = Selector("data/feature")
-            >>> ipca = selector.getIPCA(embd_fold, batch_size=20)
-        Example: to load and use the fitted IncrementalPCA,
-            >>> ipca = Selector("data/feature").getIPCA()
-            >>> repre = ipac.transform(feature)
-        """
-
         # input check
         if isinstance(embd_fold, str): embd_fold = [embd_fold]
 
@@ -432,15 +394,6 @@ class Selector:
         self, embd_fold: str | list[str], 
         recalculate: bool = False, verbal: bool | int = True,
     ) -> np.ndarray:
-        """
-        Example:
-            >>> import pandas as pd
-            >>> from src import Selector
-            >>> profile = pd.read_csv("data/profile.csv")
-            >>> embd_fold = profile["embd_fold"].to_list()
-            >>> repre = Selector("data/feature").getRepre(embd_fold)
-        """
-
         # input check
         if isinstance(embd_fold, str): embd_fold = [embd_fold]
 

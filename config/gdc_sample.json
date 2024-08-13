@@ -2,11 +2,11 @@
     "args_path": {
         "config_path":  "/mnt/efs_v2/dbgap_tcga/users/tianrui.qi/SIP-DB2/config/gdc_sample.json",
         "bam_path":     "/mnt/efs_v2/dbgap_tcga/users/tianrui.qi/SIP-DB2/config/gdc_sample.txt",
-        "embd_fold":    "/mnt/efs_v2/dbgap_tcga/users/tianrui.qi/SIP-DB2/test/gdc_sample/embd",
-        "feature_fold": "/mnt/efs_v2/dbgap_tcga/users/tianrui.qi/SIP-DB2/test/gdc_sample/feature",
+        "embd_fold":    "/mnt/efs_v2/dbgap_tcga/users/tianrui.qi/SIP-DB2/data/gdc_sample/embd",
+        "feature_fold": "/mnt/efs_v2/dbgap_tcga/users/tianrui.qi/SIP-DB2/data/gdc_sample/feature",
         "snps_path":    "/mnt/efs_v2/dbgap_tcga/users/tianrui.qi/SIP-DB2/data/snps.h5",
-        "figure_path":  "/mnt/efs_v2/dbgap_tcga/users/tianrui.qi/SIP-DB2/test/gdc_sample/plot.png",
-        "logs_fold":    "/mnt/efs_v2/dbgap_tcga/users/tianrui.qi/SIP-DB2/test/gdc_sample/logs",
+        "figure_path":  "/mnt/efs_v2/dbgap_tcga/users/tianrui.qi/SIP-DB2/data/gdc_sample/plot.png",
+        "logs_fold":    "/mnt/efs_v2/dbgap_tcga/users/tianrui.qi/SIP-DB2/data/gdc_sample/logs",
         "environment":  "source /home/s.tianrui.qi/miniconda3/etc/profile.d/conda.sh\nconda activate SIP-DB2"
     },
     "args_step": {
