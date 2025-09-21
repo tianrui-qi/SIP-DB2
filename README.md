@@ -1,3 +1,5 @@
+Please check [project presentation](https://cdn.jsdelivr.net/gh/tianrui-qi/SIP-DB2@main/assets/2024-08-16-Group.pdf) for an overview of this project, including background, goals, challenges, methods, results, and next steps.
+
 ## Environment
 
 The code is tested with `Python=3.10`, `PyTorch=2.2`, and `CUDA=11.8`. We 
