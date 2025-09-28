@@ -1,3 +1,6 @@
+Please refer to the [presentation](https://cdn.jsdelivr.net/gh/tianrui-qi/SIP-DB2@main/asset/presentation.pdf) for a complete overview of this project. 
+The following documentation is for development use only.
+
 ## Environment
 
 The code is tested with `Python=3.10`, `PyTorch=2.2`, and `CUDA=11.8`. We 
@@ -236,9 +239,9 @@ print(profile_tcgaskcm.head().to_markdown())
 All Stanford samples are group to easy and train set. 
 For TCGA SKCM samples,
 
-![figure-1](assets/figure-1.jpeg)
+![figure-1](asset/figure-1.jpeg)
 
-![figure-2](assets/figure-2.jpg)
+![figure-2](asset/figure-2.jpg)
 
 ```python
 import pandas as pd
